@@ -1,0 +1,15 @@
+Fonctionnalités future version (V2.2) : 
+----------------------------------
+- Ajouter taille de tous les répertoires sélectionnés pour la backup (dans onglet Sauvegardes)
+- Ajouter taille totale disponible restante sur le disque contenant le dossier de backup sélectionné (dans onglet Sauvegardes)
+- Afficher : Prochaine backup programmée le "jj-mm-aaaa" à "hh:mm:ss" (uniquement si backup auto activé, sinon "Pas de backup programmée") (dans onglet Sauvegardes)
+- Permettre directement la multisélection de dossiers Source en simultané (dans onglet Sauvegardes)
+- Afficher la taille totale du dossier contenant tous les zip des backups (dans onglet Suppression)
+- Permettre d'exporter la configuration utilisateur (chemins, durées...) dans un json. / Ajouter un bouton d'importation de la configuration.
+
+------
+Options peut-être utiles dans la V2.3: 
+- Rajouter plusieurs dossiers Destination pour les backups (onglet Sauvegardes) - peut etre utile pour avoir des backups à plusieurs endroits à la fois
+- Rajouter plusieurs dossiers de checkup de suppression (Onglet Suppression) - Utile uniquement si plusieurs dossiers Destination de backups sélectionnés
+- Bouton "Force Purge All Backups" pour supprimer tout le répertoire manuellement (mettre une règle de sécurité avec confirmation)
+- Rajouter le fait de pouvoir choisir l'heure d'exécution (toujours quotidienne) de la vérif de suppression !

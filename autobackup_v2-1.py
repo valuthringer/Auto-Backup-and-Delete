@@ -945,6 +945,11 @@ style.configure(
 # Ajouter des styles d'accentuation verte (Forest style)
 style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"))
 style.configure("Thick.Horizontal.TProgressbar", thickness=28)
+style.configure("DarkAccent.TButton", font=("Segoe UI", 10, "bold"))
+style.map("DarkAccent.TButton",
+    background=[("active", "#1B5E20"), ("pressed", "#145214"), ("!active", "#2E7D32"), ("disabled", "#555555")],
+    foreground=[("disabled", "#aaaaaa"), ("!disabled", "white")],
+)
 
 
 def _make_time_vcmd(max_val):
@@ -1319,7 +1324,7 @@ button_frame.columnconfigure(2, weight=1)
 
 start_backup_button = ttk.Button(
     button_frame,
-    text="Start Backup",
+    text="Enable Auto-Backup",
     command=start_backup_schedule,
     style="Accent.TButton",
 )
@@ -1327,7 +1332,7 @@ start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_backup_button = ttk.Button(
     button_frame,
-    text="Stop Backup",
+    text="Disable Auto-Backup",
     state="disabled",
     command=stop_backup_schedule,
 )
@@ -1337,7 +1342,7 @@ manual_backup_button = ttk.Button(
     button_frame,
     text="Manual Backup",
     command=manual_backup,
-    style="Accent.TButton",
+    style="DarkAccent.TButton",
 )
 manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
@@ -1505,7 +1510,7 @@ delete_button_frame.columnconfigure(2, weight=1)
 
 start_delete_button = ttk.Button(
     delete_button_frame,
-    text="Start Delete",
+    text="Enable Auto-Delete",
     command=start_auto_delete_schedule,
     style="Accent.TButton",
 )
@@ -1513,7 +1518,7 @@ start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_delete_button = ttk.Button(
     delete_button_frame,
-    text="Stop Delete",
+    text="Disable Auto-Delete",
     command=stop_auto_delete_schedule,
     state="disabled",
 )
@@ -1523,7 +1528,7 @@ manual_delete_button = ttk.Button(
     delete_button_frame,
     text="Manual Delete",
     command=manual_delete,
-    style="Accent.TButton",
+    style="DarkAccent.TButton",
 )
 manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 

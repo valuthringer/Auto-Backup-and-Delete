@@ -1,1 +1,1 @@
-python -m PyInstaller --onefile --windowed --icon=logo_autobackup.ico .\autobackup.py
+pyinstaller autobackup.spec

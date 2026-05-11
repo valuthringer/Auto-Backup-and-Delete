@@ -51,6 +51,28 @@ def save_profiles_dict(profiles):
         print(f"Erreur sauvegarde profils: {e}")
 
 
+active_profile = None
+
+
+def auto_save_active_profile():
+    """Sauvegarde silencieusement la config dans le profil actif (si un profil est chargé)"""
+    if active_profile is None:
+        return
+    profiles = load_profiles_dict()
+    profiles[active_profile] = {
+        "root_dirs": root_dirs_text.get_paths(),
+        "dest_dir": dest_dir_entry.get(),
+        "frequency_days": frequency_entry.get(),
+        "hour": hour_entry.get(),
+        "minute": minute_entry.get(),
+        "directory": directory_entry.get(),
+        "days": days_entry.get(),
+        "delete_hour": delete_hour_entry.get(),
+        "delete_minute": delete_minute_entry.get(),
+    }
+    save_profiles_dict(profiles)
+
+
 def save_current_config_as_profile(profile_name):
     """Sauvegarde la configuration actuelle comme un profil"""
     profiles = load_profiles_dict()
@@ -71,9 +93,11 @@ def save_current_config_as_profile(profile_name):
 
 
 def load_profile_config(profile_name):
-    """Charge une configuration depuis un profil"""
+    """Charge une configuration depuis un profil et l'active pour l'auto-save"""
+    global active_profile
     profiles = load_profiles_dict()
     if profile_name in profiles:
+        active_profile = profile_name
         config = profiles[profile_name]
         root_dirs_text.set_paths(config.get("root_dirs", ""))
         dest_dir_entry.delete(0, tk.END)
@@ -513,6 +537,7 @@ def add_root_folder():
         root_dirs_text.paths.append(folder_selected)
         root_dirs_text.update_display()
         update_backup_info_display()
+        auto_save_active_profile()
 
 
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
@@ -590,6 +615,7 @@ def browse_dest_folder():
         dest_dir_entry.delete(0, tk.END)
         dest_dir_entry.insert(0, folder_selected)
         update_backup_info_display()
+        auto_save_active_profile()
 
 
 def browse_delete_folder():
@@ -600,6 +626,7 @@ def browse_delete_folder():
     if folder_selected:
         directory_entry.delete(0, tk.END)
         directory_entry.insert(0, folder_selected)
+        auto_save_active_profile()
 
 
 # Fonctions UI pour les profils
@@ -921,7 +948,7 @@ class TagsWidget:
             widget.destroy()
 
         if self.paths:
-            for i, path in enumerate(self.paths):
+            for path in self.paths:
                 tag_frame = tk.Frame(
                     self.tags_frame,
                     relief="solid",
@@ -1150,7 +1177,10 @@ ttk.Label(backup_inner, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
 )
 root_dirs_text = TagsWidget(backup_inner)
 root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-root_dirs_text.on_change = update_backup_info_display
+def _on_root_dirs_change():
+    update_backup_info_display()
+    auto_save_active_profile()
+root_dirs_text.on_change = _on_root_dirs_change
 
 add_root_button = ttk.Button(
     backup_inner,
@@ -1426,15 +1456,16 @@ def _setup_scroll_routing():
 
 root.after(100, _setup_scroll_routing)
 
-# Event bindings to update info displays
+# Event bindings to update info displays and auto-save config
 root_dirs_text.input_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
-dest_dir_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
-frequency_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
-hour_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
-minute_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
-
-# Initial display update
-root.after(500, update_backup_info_display)
+dest_dir_entry.bind("<KeyRelease>", lambda e: (update_backup_info_display(), auto_save_active_profile()))
+frequency_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
+hour_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
+minute_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
+directory_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
+days_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
+delete_hour_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
+delete_minute_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
 
 # Démarrage interface
 root.mainloop()

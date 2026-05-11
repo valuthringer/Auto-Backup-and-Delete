@@ -359,21 +359,25 @@ def update_next_backup_display():
 # Supprimer les fichiers zip du répertoire de sauvegarde
 def check_and_delete_zip_files(directory, days):
     """Supprime les fichiers .zip plus anciens que le nombre de jours spécifié"""
+    root.after(0, lambda: set_delete_ui_locked(True))
     now = datetime.now()
     delete_before = now - timedelta(days=days)
-
     deleted_count = 0
     try:
-        for filename in os.listdir(directory):
-            if filename.endswith(".zip"):
-                file_path = os.path.join(directory, filename)
-                file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-
-                if file_mod_time < delete_before:
-                    os.remove(file_path)
-                    deleted_count += 1
-                    print(f"Deleted: {filename}")
-
+        zip_files = [f for f in os.listdir(directory) if f.endswith(".zip")]
+        total = len(zip_files)
+        for i, filename in enumerate(zip_files):
+            file_path = os.path.join(directory, filename)
+            file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+            if file_mod_time < delete_before:
+                os.remove(file_path)
+                deleted_count += 1
+                print(f"Deleted: {filename}")
+            progress = int(((i + 1) / total) * 100) if total > 0 else 100
+            root.after(0, lambda p=progress: (
+                delete_progress_var.set(p),
+                delete_progress_percent_label.config(text=f"{p}%"),
+            ))
         if deleted_count > 0:
             display_status(f"[OK] {deleted_count} file(s) deleted", "green")
         else:
@@ -381,6 +385,12 @@ def check_and_delete_zip_files(directory, days):
     except Exception as e:
         display_status(f"[ERROR] Error during deletion: {str(e)}", "red")
         print(f"Error during deletion: {e}")
+    finally:
+        def _reset_delete():
+            delete_progress_var.set(0)
+            delete_progress_percent_label.config(text="0%")
+            set_delete_ui_locked(False)
+        root.after(0, _reset_delete)
 
 
 # Créer une sauvegarde auto à partir des dossiers sources
@@ -1326,6 +1336,7 @@ ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
 # Barre de progression
 progress_var = tk.IntVar()
+delete_progress_var = tk.IntVar()
 progress_frame = ttk.Frame(backup_inner)
 progress_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 progress_frame.columnconfigure(0, weight=1)
@@ -1494,14 +1505,57 @@ delete_minute_entry.insert(0, "0")
 delete_minute_entry.pack(side="left", padx=2)
 ttk.Label(schedule_frame, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
+# Barre de progression (suppression)
+delete_progress_frame = ttk.Frame(delete_inner)
+delete_progress_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+delete_progress_frame.columnconfigure(0, weight=1)
+
+delete_progress_bar = ttk.Progressbar(
+    delete_progress_frame,
+    orient="horizontal",
+    mode="determinate",
+    variable=delete_progress_var,
+    style="Thick.Horizontal.TProgressbar",
+)
+delete_progress_bar.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+delete_progress_percent_label = ttk.Label(
+    delete_progress_frame, text="0%", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
+)
+delete_progress_percent_label.grid(row=0, column=1, sticky="e")
+
 # Info labels
 espace = ttk.Frame(delete_inner)
-espace.grid(row=4, column=0, columnspan=2, sticky="ew", pady=8)
+espace.grid(row=5, column=0, columnspan=2, sticky="ew", pady=8)
 
 delete_backup_folder_label = ttk.Label(
     espace, text="Backup folder: -", foreground="#2E7D32", font=("Segoe UI", 9)
 )
 delete_backup_folder_label.pack(anchor="w", pady=5)
+
+
+def set_delete_ui_locked(locked):
+    """Grise la section Delete pendant qu'une suppression est en cours"""
+    global _saved_button_states
+
+    widgets_to_toggle = [
+        directory_entry, browse_delete_button,
+        days_entry, delete_hour_entry, delete_minute_entry,
+        manual_delete_button,
+    ]
+
+    if locked:
+        _saved_button_states["start_delete"] = start_delete_button.cget("state")
+        _saved_button_states["stop_delete"] = stop_delete_button.cget("state")
+        start_delete_button.config(state="disabled")
+        stop_delete_button.config(state="disabled")
+        for w in widgets_to_toggle:
+            w.config(state="disabled")
+    else:
+        start_delete_button.config(state=_saved_button_states.get("start_delete", "normal"))
+        stop_delete_button.config(state=_saved_button_states.get("stop_delete", "disabled"))
+        for w in widgets_to_toggle:
+            w.config(state="normal")
 
 
 def set_ui_locked(locked):

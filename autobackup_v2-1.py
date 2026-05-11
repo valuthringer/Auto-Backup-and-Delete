@@ -425,7 +425,7 @@ def update_next_backup_display():
         next_backup_label.config(text="Next backup: -")
         return
 
-    if start_backup_button.cget("state") == "normal":
+    if auto_backup_var.get() == 0:
         next_backup_label.config(text="Next backup: None scheduled")
     else:
         now = datetime.now()
@@ -601,8 +601,6 @@ def start_backup_schedule():
         schedule_thread = threading.Thread(target=run_schedule, daemon=True)
         schedule_thread.start()
 
-        start_backup_button.config(state="disabled")
-        stop_backup_button.config(state="normal")
         display_status(
             f"[OK] Automatic backup started every {frequency_days} day(s) at {backup_time}",
             "green",
@@ -612,6 +610,8 @@ def start_backup_schedule():
             f"Automatic backup scheduled every {frequency_days} days at {backup_time}"
         )
     else:
+        auto_backup_var.set(0)
+        auto_backup_toggle.config(text="Enable Auto-Backup")
         display_status(
             "[ERROR] Please select source folders and a destination",
             "red",
@@ -627,8 +627,6 @@ _saved_button_states = {}
 def stop_backup_schedule():
     """Arrête la sauvegarde automatique"""
     stop_event.set()
-    start_backup_button.config(state="normal")
-    stop_backup_button.config(state="disabled")
     display_status("[OK] Automatic backup stopped", "#2E7D32")
     update_next_backup_display()
     print("Automatic backup stopped")
@@ -671,14 +669,14 @@ def start_auto_delete_schedule():
         schedule_thread = threading.Thread(target=run_schedule, daemon=True)
         schedule_thread.start()
 
-        start_delete_button.config(state="disabled")
-        stop_delete_button.config(state="normal")
         display_status(
             f"[OK] Automatic deletion started daily at {delete_time}",
             "green",
         )
         print(f"Automatic delete started daily at {delete_time}")
     else:
+        auto_delete_var.set(0)
+        auto_delete_toggle.config(text="Enable Auto-Delete")
         display_status("[ERROR] Invalid directory", "red")
 
 
@@ -686,10 +684,26 @@ def start_auto_delete_schedule():
 def stop_auto_delete_schedule():
     """Arrête la suppression automatique"""
     delete_stop_event.set()
-    start_delete_button.config(state="normal")
-    stop_delete_button.config(state="disabled")
     display_status("[OK] Automatic deletion stopped", "#2E7D32")
     print("Automatic delete stopped")
+
+
+def toggle_auto_backup():
+    if auto_backup_var.get() == 1:
+        auto_backup_toggle.config(text="Disable Auto-Backup")
+        start_backup_schedule()
+    else:
+        auto_backup_toggle.config(text="Enable Auto-Backup")
+        stop_backup_schedule()
+
+
+def toggle_auto_delete():
+    if auto_delete_var.get() == 1:
+        auto_delete_toggle.config(text="Disable Auto-Delete")
+        start_auto_delete_schedule()
+    else:
+        auto_delete_toggle.config(text="Enable Auto-Delete")
+        stop_auto_delete_schedule()
 
 
 # Suppression manuelle
@@ -1027,7 +1041,7 @@ class TagsWidget:
 
     def _on_canvas_configure(self, event):
         """Redimensionne le canvas window quand le canvas change de taille"""
-        canvas_width = event.width - 20
+        canvas_width = event.width
         if canvas_width > 0:
             self.canvas.itemconfig(self.canvas_window, width=canvas_width)
 
@@ -1320,31 +1334,24 @@ button_frame = ttk.Frame(backup_frame)
 button_frame.pack(side="bottom", fill="x", pady=(8, 0))
 button_frame.columnconfigure(0, weight=1)
 button_frame.columnconfigure(1, weight=1)
-button_frame.columnconfigure(2, weight=1)
 
-start_backup_button = ttk.Button(
+auto_backup_var = tk.IntVar(value=0)
+auto_backup_toggle = ttk.Checkbutton(
     button_frame,
     text="Enable Auto-Backup",
-    command=start_backup_schedule,
-    style="Accent.TButton",
+    style="Switch",
+    variable=auto_backup_var,
+    command=toggle_auto_backup,
 )
-start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
-
-stop_backup_button = ttk.Button(
-    button_frame,
-    text="Disable Auto-Backup",
-    state="disabled",
-    command=stop_backup_schedule,
-)
-stop_backup_button.grid(row=0, column=1, sticky="ew", padx=3)
+auto_backup_toggle.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 manual_backup_button = ttk.Button(
     button_frame,
     text="Manual Backup",
     command=manual_backup,
-    style="DarkAccent.TButton",
+    style="Accent.TButton",
 )
-manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+manual_backup_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
 # Zone scrollable (prend tout l'espace restant au-dessus des boutons)
 backup_scroll_container, backup_inner, backup_canvas = _make_scrollable_area(
@@ -1506,31 +1513,24 @@ delete_button_frame = ttk.Frame(delete_frame)
 delete_button_frame.pack(side="bottom", fill="x", pady=(8, 0))
 delete_button_frame.columnconfigure(0, weight=1)
 delete_button_frame.columnconfigure(1, weight=1)
-delete_button_frame.columnconfigure(2, weight=1)
 
-start_delete_button = ttk.Button(
+auto_delete_var = tk.IntVar(value=0)
+auto_delete_toggle = ttk.Checkbutton(
     delete_button_frame,
     text="Enable Auto-Delete",
-    command=start_auto_delete_schedule,
-    style="Accent.TButton",
+    style="Switch",
+    variable=auto_delete_var,
+    command=toggle_auto_delete,
 )
-start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
-
-stop_delete_button = ttk.Button(
-    delete_button_frame,
-    text="Disable Auto-Delete",
-    command=stop_auto_delete_schedule,
-    state="disabled",
-)
-stop_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
+auto_delete_toggle.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 manual_delete_button = ttk.Button(
     delete_button_frame,
     text="Manual Delete",
     command=manual_delete,
-    style="DarkAccent.TButton",
+    style="Accent.TButton",
 )
-manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+manual_delete_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
 # Zone scrollable
 delete_scroll_container, delete_inner, delete_canvas = _make_scrollable_area(
@@ -1683,19 +1683,15 @@ def set_delete_ui_locked(locked):
     ]
 
     if locked:
-        _saved_button_states["start_delete"] = start_delete_button.cget("state")
-        _saved_button_states["stop_delete"] = stop_delete_button.cget("state")
-        start_delete_button.config(state="disabled")
-        stop_delete_button.config(state="disabled")
+        _saved_button_states["auto_delete"] = auto_delete_toggle.cget("state")
+        _saved_button_states["auto_delete_var"] = auto_delete_var.get()
+        auto_delete_var.set(0)
+        auto_delete_toggle.config(state="disabled")
         for w in widgets_to_toggle:
             w.config(state="disabled")
     else:
-        start_delete_button.config(
-            state=_saved_button_states.get("start_delete", "normal")
-        )
-        stop_delete_button.config(
-            state=_saved_button_states.get("stop_delete", "disabled")
-        )
+        auto_delete_toggle.config(state=_saved_button_states.get("auto_delete", "normal"))
+        auto_delete_var.set(_saved_button_states.get("auto_delete_var", 0))
         for w in widgets_to_toggle:
             w.config(state="normal")
 
@@ -1722,16 +1718,16 @@ def set_ui_locked(locked):
     ]
 
     if locked:
-        _saved_button_states["start"] = start_backup_button.cget("state")
-        _saved_button_states["stop"] = stop_backup_button.cget("state")
-        start_backup_button.config(state="disabled")
-        stop_backup_button.config(state="disabled")
+        _saved_button_states["auto_backup"] = auto_backup_toggle.cget("state")
+        _saved_button_states["auto_backup_var"] = auto_backup_var.get()
+        auto_backup_var.set(0)
+        auto_backup_toggle.config(state="disabled")
         for w in widgets_to_toggle:
             w.config(state="disabled")
         root_dirs_text.set_disabled(True)
     else:
-        start_backup_button.config(state=_saved_button_states.get("start", "normal"))
-        stop_backup_button.config(state=_saved_button_states.get("stop", "disabled"))
+        auto_backup_toggle.config(state=_saved_button_states.get("auto_backup", "normal"))
+        auto_backup_var.set(_saved_button_states.get("auto_backup_var", 0))
         for w in widgets_to_toggle:
             w.config(state="normal")
         root_dirs_text.set_disabled(False)

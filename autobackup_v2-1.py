@@ -988,35 +988,67 @@ def open_help():
     notebook.add(backup_frame, text="Backups")
 
     help_texts_backup = [
-        "1. Select one or more folders to back up",
-        "2. Select a destination folder for the backups",
-        "3. Backups are named in the form 'Backup_DD_MM_YYYY_num'",
-        "4. Set a backup frequency in days and a time",
-        "5. Click 'Start Backup' to enable automatic backups",
+        "1. Click '+ Add Source Folder' or type a path manually and press OK to add source folders.",
+        "2. Click '+ Add Destination Folder' to add one or more backup destinations.",
+        "   → Backups will be copied to ALL destination folders simultaneously.",
+        "3. Backups are ZIP files named: Backup_DD-MM-YYYY_N.zip",
+        "4. Set the frequency (every N days) and the time (hour / minute) in the Schedule section.",
+        "5. Toggle 'Enable Auto-Backup' to start scheduled automatic backups.",
+        "   → Use 'Manual Backup' to trigger an immediate backup at any time.",
         "",
-        "[TIP] Tip: You can add multiple folders by separating them with ';'",
+        "The info panel shows: source size, available space on destination, estimated remaining space, and next scheduled backup time.",
+        "",
+        "⚠  A backup is aborted if no source or destination folder is selected.",
     ]
 
     for text in help_texts_backup:
         label = ttk.Label(backup_frame, text=text, wraplength=550, justify="left")
-        label.pack(anchor="w", pady=5)
+        label.pack(anchor="w", pady=3)
 
     # Onglet Suppression
     delete_frame = ttk.Frame(notebook, padding=10)
     notebook.add(delete_frame, text="Deletion")
 
     help_texts_delete = [
-        "1. Select a folder to monitor for deleting old .zip backups",
-        "2. Set the number of days before deletion",
-        "3. Click 'Start Delete' to enable automatic deletion",
+        "1. Click '+ Add Deletion Folder' to select folders to monitor (typically your backup destinations).",
+        "   → Multiple folders are supported.",
+        "2. Set 'Keep backups since' to the number of days to retain. ZIP files older than this will be deleted.",
+        "3. Set a daily schedule time (hour / minute) for automatic deletion.",
+        "4. Toggle 'Enable Auto-Delete' to activate the daily automatic cleanup.",
+        "   → Use 'Manual Delete' to run the cleanup immediately.",
         "",
-        "[WARNING] Warning: .zip files older than the specified number of days will be deleted",
-        "[TIME] Deletions run daily at 03:00 AM",
+        "'Force Purge All' deletes ALL files in the monitored folders (requires double confirmation).",
+        "",
+        "The info panel shows: total folder size, size and count of files eligible for deletion, and estimated size after cleanup.",
+        "",
+        "⚠  Only .zip files are targeted by the scheduled/manual deletion. Force Purge removes everything.",
     ]
 
     for text in help_texts_delete:
         label = ttk.Label(delete_frame, text=text, wraplength=550, justify="left")
-        label.pack(anchor="w", pady=5)
+        label.pack(anchor="w", pady=3)
+
+    # Onglet Profils
+    profiles_frame = ttk.Frame(notebook, padding=10)
+    notebook.add(profiles_frame, text="Profiles")
+
+    help_texts_profiles = [
+        "Profiles let you save and restore complete configurations (source folders, destinations, schedule, deletion settings).",
+        "",
+        "• 'New Profile' — resets all fields to start a fresh configuration.",
+        "• 'Save Profile As' — saves the current configuration under a new name.",
+        "• 'Save Profile' — updates the currently active profile with the latest settings.",
+        "• 'Load Profile' — applies the selected profile from the list.",
+        "• 'Delete Profile' — permanently removes the selected profile.",
+        "",
+        "The active profile is auto-saved every 5 minutes in the background.",
+        "",
+        "Profiles are stored in: %APPDATA%\\Auto-Backup-and-Delete\\profiles.json",
+    ]
+
+    for text in help_texts_profiles:
+        label = ttk.Label(profiles_frame, text=text, wraplength=550, justify="left")
+        label.pack(anchor="w", pady=3)
 
 
 def open_a_propos():

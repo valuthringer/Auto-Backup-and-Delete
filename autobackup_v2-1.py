@@ -118,6 +118,7 @@ def load_profile_config(profile_name):
         delete_minute_entry.insert(0, config.get("delete_minute", "0"))
         display_status(f"[OK] Profile '{profile_name}' loaded", "green")
         update_backup_info_display()
+        update_delete_info_display()
 
 
 def delete_profile(profile_name):
@@ -263,6 +264,27 @@ def format_size(size_bytes):
     return f"{size_bytes:.2f} PB"
 
 
+def simulate_delete_stats(directory, days):
+    """Simule la suppression et retourne (total_size, to_delete_size, to_delete_count, after_size)"""
+    total_size = get_directory_size(directory)
+    to_delete_size = 0
+    to_delete_count = 0
+    now = datetime.now()
+    delete_before = now - timedelta(days=days)
+    try:
+        for filename in os.listdir(directory):
+            if filename.endswith(".zip"):
+                file_path = os.path.join(directory, filename)
+                if os.path.exists(file_path):
+                    file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                    if file_mod_time < delete_before:
+                        to_delete_size += os.path.getsize(file_path)
+                        to_delete_count += 1
+    except Exception as e:
+        print(f"Error during delete simulation: {e}")
+    return total_size, to_delete_size, to_delete_count, total_size - to_delete_size
+
+
 def update_backup_info_display():
     """Met à jour les labels de taille, espace dispo et prévision (calcul en background)"""
     root_dirs = root_dirs_text.get_paths()
@@ -331,6 +353,68 @@ def update_backup_info_display():
     threading.Thread(target=_calculate, daemon=True).start()
 
 
+def update_delete_info_display():
+    """Met à jour les stats de simulation de suppression (calcul en background)"""
+    directory = directory_entry.get()
+    try:
+        days = int(days_entry.get())
+    except (ValueError, AttributeError):
+        days = 0
+
+    if not directory or not os.path.exists(directory):
+        delete_folder_size_label.config(
+            text="Total folder size: -", foreground="#2E7D32"
+        )
+        delete_to_delete_size_label.config(
+            text="Total to delete: -", foreground="#2E7D32"
+        )
+        delete_eligible_count_label.config(
+            text="Eligible files: -", foreground="#2E7D32"
+        )
+        delete_after_size_label.config(
+            text="Estimated folder size after deletion: -", foreground="#2E7D32"
+        )
+        return
+
+    for lbl, txt in [
+        (delete_folder_size_label, "Total folder size: calculating..."),
+        (delete_to_delete_size_label, "Total to delete: calculating..."),
+        (delete_eligible_count_label, "Eligible files: calculating..."),
+        (
+            delete_after_size_label,
+            "Estimated folder size after deletion: calculating...",
+        ),
+    ]:
+        lbl.config(text=txt, foreground="#888888")
+
+    def _calculate():
+        total_size, to_delete_size, to_delete_count, after_size = simulate_delete_stats(
+            directory, days
+        )
+
+        def _update_ui():
+            delete_folder_size_label.config(
+                text=f"Total folder size: {format_size(total_size)}",
+                foreground="#2E7D32",
+            )
+            del_color = "#d32f2f" if to_delete_count > 0 else "#2E7D32"
+            delete_to_delete_size_label.config(
+                text=f"Total to delete: {format_size(to_delete_size)}",
+                foreground=del_color,
+            )
+            delete_eligible_count_label.config(
+                text=f"Eligible files: {to_delete_count} file(s)", foreground=del_color
+            )
+            delete_after_size_label.config(
+                text=f"Estimated folder size after deletion: {format_size(after_size)}",
+                foreground="#2E7D32",
+            )
+
+        root.after(0, _update_ui)
+
+    threading.Thread(target=_calculate, daemon=True).start()
+
+
 def update_next_backup_display():
     """Met à jour l'affichage de la prochaine sauvegarde programmée"""
     try:
@@ -374,10 +458,13 @@ def check_and_delete_zip_files(directory, days):
                 deleted_count += 1
                 print(f"Deleted: {filename}")
             progress = int(((i + 1) / total) * 100) if total > 0 else 100
-            root.after(0, lambda p=progress: (
-                delete_progress_var.set(p),
-                delete_progress_percent_label.config(text=f"{p}%"),
-            ))
+            root.after(
+                0,
+                lambda p=progress: (
+                    delete_progress_var.set(p),
+                    delete_progress_percent_label.config(text=f"{p}%"),
+                ),
+            )
         if deleted_count > 0:
             display_status(f"[OK] {deleted_count} file(s) deleted", "green")
         else:
@@ -386,10 +473,13 @@ def check_and_delete_zip_files(directory, days):
         display_status(f"[ERROR] Error during deletion: {str(e)}", "red")
         print(f"Error during deletion: {e}")
     finally:
+
         def _reset_delete():
             delete_progress_var.set(0)
             delete_progress_percent_label.config(text="0%")
             set_delete_ui_locked(False)
+            update_delete_info_display()
+
         root.after(0, _reset_delete)
 
 
@@ -492,9 +582,7 @@ def start_backup_schedule():
         minute = int(minute_entry.get())
         backup_time = f"{hour:02}:{minute:02}"
     except ValueError:
-        display_status(
-            "[ERROR] Invalid input for frequency, hour or minutes", "red"
-        )
+        display_status("[ERROR] Invalid input for frequency, hour or minutes", "red")
         print("Invalid input for frequency, hour or minute")
         return
 
@@ -624,9 +712,7 @@ def manual_delete():
 
 def browse_dest_folder():
     """Ouvre un dialogue pour sélectionner le dossier de destination"""
-    folder_selected = filedialog.askdirectory(
-        title="Select destination folder"
-    )
+    folder_selected = filedialog.askdirectory(title="Select destination folder")
     if folder_selected:
         dest_dir_entry.delete(0, tk.END)
         dest_dir_entry.insert(0, folder_selected)
@@ -635,20 +721,17 @@ def browse_dest_folder():
 
 def browse_delete_folder():
     """Ouvre un dialogue pour sélectionner le dossier à surveiller"""
-    folder_selected = filedialog.askdirectory(
-        title="Select folder to monitor"
-    )
+    folder_selected = filedialog.askdirectory(title="Select folder to monitor")
     if folder_selected:
         directory_entry.delete(0, tk.END)
         directory_entry.insert(0, folder_selected)
+        update_delete_info_display()
 
 
 # Fonctions UI pour les profils
 def save_profile_dialog():
     """Ouvre un dialogue pour nommer et sauvegarder un profil"""
-    profile_name = simpledialog.askstring(
-        "Save Profile", "Profile name:", parent=root
-    )
+    profile_name = simpledialog.askstring("Save Profile", "Profile name:", parent=root)
     if profile_name:
         if profile_name.strip():
             save_current_config_as_profile(profile_name.strip())
@@ -669,9 +752,7 @@ def delete_selected_profile():
     selection = profile_listbox.curselection()
     if selection:
         profile_name = profile_listbox.get(selection[0])
-        if messagebox.askyesno(
-            "Confirmation", f"Delete profile '{profile_name}'?"
-        ):
+        if messagebox.askyesno("Confirmation", f"Delete profile '{profile_name}'?"):
             delete_profile(profile_name)
 
 
@@ -737,9 +818,7 @@ def open_help():
     main_help_frame.pack(fill="both", expand=True)
 
     # Titre
-    title_label = ttk.Label(
-        main_help_frame, text="User Guide", style="Header.TLabel"
-    )
+    title_label = ttk.Label(main_help_frame, text="User Guide", style="Header.TLabel")
     title_label.pack(anchor="w", pady=(0, 10))
 
     # Créer un Notebook (onglets)
@@ -1524,14 +1603,49 @@ delete_progress_percent_label = ttk.Label(
 )
 delete_progress_percent_label.grid(row=0, column=1, sticky="e")
 
-# Info labels
-espace = ttk.Frame(delete_inner)
-espace.grid(row=5, column=0, columnspan=2, sticky="ew", pady=8)
+# Info labels - simulation stats
+delete_info_frame = ttk.Frame(delete_inner)
+delete_info_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
 
-delete_backup_folder_label = ttk.Label(
-    espace, text="Backup folder: -", foreground="#2E7D32", font=("Segoe UI", 9)
+delete_folder_size_label = ttk.Label(
+    delete_info_frame,
+    text="Total folder size: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
 )
-delete_backup_folder_label.pack(anchor="w", pady=5)
+delete_folder_size_label.pack(anchor="w", pady=2)
+
+delete_to_delete_size_label = ttk.Label(
+    delete_info_frame,
+    text="Total to delete: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
+)
+delete_to_delete_size_label.pack(anchor="w", pady=2)
+
+delete_eligible_count_label = ttk.Label(
+    delete_info_frame,
+    text="Eligible files: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
+)
+delete_eligible_count_label.pack(anchor="w", pady=2)
+
+delete_after_row = ttk.Frame(delete_info_frame)
+delete_after_row.pack(anchor="w", fill="x", pady=2)
+
+delete_after_size_label = ttk.Label(
+    delete_after_row,
+    text="Estimated folder size after deletion: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9, "bold"),
+)
+delete_after_size_label.pack(side="left")
+
+refresh_delete_info_button = ttk.Button(
+    delete_after_row, text="Refresh", command=update_delete_info_display, width=9
+)
+refresh_delete_info_button.pack(side="right", padx=(8, 0))
 
 
 def set_delete_ui_locked(locked):
@@ -1539,9 +1653,13 @@ def set_delete_ui_locked(locked):
     global _saved_button_states
 
     widgets_to_toggle = [
-        directory_entry, browse_delete_button,
-        days_entry, delete_hour_entry, delete_minute_entry,
+        directory_entry,
+        browse_delete_button,
+        days_entry,
+        delete_hour_entry,
+        delete_minute_entry,
         manual_delete_button,
+        refresh_delete_info_button,
     ]
 
     if locked:
@@ -1552,8 +1670,12 @@ def set_delete_ui_locked(locked):
         for w in widgets_to_toggle:
             w.config(state="disabled")
     else:
-        start_delete_button.config(state=_saved_button_states.get("start_delete", "normal"))
-        stop_delete_button.config(state=_saved_button_states.get("stop_delete", "disabled"))
+        start_delete_button.config(
+            state=_saved_button_states.get("start_delete", "normal")
+        )
+        stop_delete_button.config(
+            state=_saved_button_states.get("stop_delete", "disabled")
+        )
         for w in widgets_to_toggle:
             w.config(state="normal")
 
@@ -1563,11 +1685,20 @@ def set_ui_locked(locked):
     global _saved_button_states
 
     widgets_to_toggle = [
-        add_root_button, dest_dir_entry, browse_dest_button,
-        frequency_entry, hour_entry, minute_entry,
-        manual_backup_button, refresh_info_button,
-        profile_listbox, new_profile_button, load_profile_button,
-        save_profile_button, save_profile_as_button, delete_profile_button,
+        add_root_button,
+        dest_dir_entry,
+        browse_dest_button,
+        frequency_entry,
+        hour_entry,
+        minute_entry,
+        manual_backup_button,
+        refresh_info_button,
+        profile_listbox,
+        new_profile_button,
+        load_profile_button,
+        save_profile_button,
+        save_profile_as_button,
+        delete_profile_button,
     ]
 
     if locked:
@@ -1637,6 +1768,9 @@ dest_dir_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
 frequency_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
 hour_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
 minute_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+days_entry.bind("<KeyRelease>", lambda e: update_delete_info_display())
+days_entry.bind("<FocusOut>", lambda e: update_delete_info_display())
+directory_entry.bind("<KeyRelease>", lambda e: update_delete_info_display())
 
 # Démarrer la sauvegarde automatique périodique (toutes les 5 minutes)
 root.after(300000, periodic_autosave)

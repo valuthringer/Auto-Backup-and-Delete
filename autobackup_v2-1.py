@@ -61,11 +61,11 @@ def auto_save_active_profile():
     profiles = load_profiles_dict()
     profiles[active_profile] = {
         "root_dirs": root_dirs_text.get_paths(),
-        "dest_dir": dest_dir_entry.get(),
+        "dest_dirs": dest_dirs_text.get_paths(),
         "frequency_days": frequency_entry.get(),
         "hour": hour_entry.get(),
         "minute": minute_entry.get(),
-        "directory": directory_entry.get(),
+        "delete_dirs": delete_dirs_text.get_paths(),
         "days": days_entry.get(),
         "delete_hour": delete_hour_entry.get(),
         "delete_minute": delete_minute_entry.get(),
@@ -78,11 +78,11 @@ def save_current_config_as_profile(profile_name):
     profiles = load_profiles_dict()
     profiles[profile_name] = {
         "root_dirs": root_dirs_text.get_paths(),
-        "dest_dir": dest_dir_entry.get(),
+        "dest_dirs": dest_dirs_text.get_paths(),
         "frequency_days": frequency_entry.get(),
         "hour": hour_entry.get(),
         "minute": minute_entry.get(),
-        "directory": directory_entry.get(),
+        "delete_dirs": delete_dirs_text.get_paths(),
         "days": days_entry.get(),
         "delete_hour": delete_hour_entry.get(),
         "delete_minute": delete_minute_entry.get(),
@@ -100,16 +100,16 @@ def load_profile_config(profile_name):
         active_profile = profile_name
         config = profiles[profile_name]
         root_dirs_text.set_paths(config.get("root_dirs", ""))
-        dest_dir_entry.delete(0, tk.END)
-        dest_dir_entry.insert(0, config.get("dest_dir", ""))
+        dest_dirs_text.set_paths(config.get("dest_dirs", config.get("dest_dir", "")))
         frequency_entry.delete(0, tk.END)
         frequency_entry.insert(0, config.get("frequency_days", "1"))
         hour_entry.delete(0, tk.END)
         hour_entry.insert(0, config.get("hour", "2"))
         minute_entry.delete(0, tk.END)
         minute_entry.insert(0, config.get("minute", "0"))
-        directory_entry.delete(0, tk.END)
-        directory_entry.insert(0, config.get("directory", ""))
+        delete_dirs_text.set_paths(
+            config.get("delete_dirs", config.get("directory", ""))
+        )
         days_entry.delete(0, tk.END)
         days_entry.insert(0, config.get("days", "30"))
         delete_hour_entry.delete(0, tk.END)
@@ -288,7 +288,7 @@ def simulate_delete_stats(directory, days):
 def update_backup_info_display():
     """Met à jour les labels de taille, espace dispo et prévision (calcul en background)"""
     root_dirs = root_dirs_text.get_paths()
-    dest_dir = dest_dir_entry.get()
+    dest_dirs = dest_dirs_text.get_paths()
 
     if root_dirs:
         backup_size_label.config(
@@ -305,8 +305,11 @@ def update_backup_info_display():
         free_space = 0
         if root_dirs:
             total_size = get_selected_dirs_total_size(root_dirs)
-        if dest_dir and os.path.exists(dest_dir):
-            free_space = get_disk_free_space(dest_dir)
+        if dest_dirs:
+            dest_dir_list = [d.strip() for d in dest_dirs.split(";") if d.strip()]
+            for dest_dir in dest_dir_list:
+                if os.path.exists(dest_dir):
+                    free_space = max(free_space, get_disk_free_space(dest_dir))
 
         def _update_ui():
             if root_dirs:
@@ -314,7 +317,7 @@ def update_backup_info_display():
                     text=f"Total source size: {format_size(total_size)}",
                     foreground="#2E7D32",
                 )
-            if dest_dir and os.path.exists(dest_dir):
+            if dest_dirs and free_space > 0:
                 dest_space_label.config(
                     text=f"Available space (destination): {format_size(free_space)}",
                     foreground="#2E7D32",
@@ -355,13 +358,15 @@ def update_backup_info_display():
 
 def update_delete_info_display():
     """Met à jour les stats de simulation de suppression (calcul en background)"""
-    directory = directory_entry.get()
+    directories_str = delete_dirs_text.get_paths()
     try:
         days = int(days_entry.get())
     except (ValueError, AttributeError):
         days = 0
 
-    if not directory or not os.path.exists(directory):
+    directories = [d.strip() for d in directories_str.split(";") if d.strip()]
+
+    if not directories or not all(os.path.exists(d) for d in directories):
         delete_folder_size_label.config(
             text="Total folder size: -", foreground="#2E7D32"
         )
@@ -388,9 +393,28 @@ def update_delete_info_display():
         lbl.config(text=txt, foreground="#888888")
 
     def _calculate():
-        total_size, to_delete_size, to_delete_count, after_size = simulate_delete_stats(
-            directory, days
-        )
+        total_size = 0
+        to_delete_size = 0
+        to_delete_count = 0
+        for directory in directories:
+            if os.path.exists(directory):
+                total_size += get_directory_size(directory)
+                now = datetime.now()
+                delete_before = now - timedelta(days=days)
+                try:
+                    for filename in os.listdir(directory):
+                        if filename.endswith(".zip"):
+                            file_path = os.path.join(directory, filename)
+                            if os.path.exists(file_path):
+                                file_mod_time = datetime.fromtimestamp(
+                                    os.path.getmtime(file_path)
+                                )
+                                if file_mod_time < delete_before:
+                                    to_delete_size += os.path.getsize(file_path)
+                                    to_delete_count += 1
+                except Exception as e:
+                    print(f"Error during delete simulation: {e}")
+        after_size = total_size - to_delete_size
 
         def _update_ui():
             delete_folder_size_label.config(
@@ -441,30 +465,55 @@ def update_next_backup_display():
 
 
 # Supprimer les fichiers zip du répertoire de sauvegarde
-def check_and_delete_zip_files(directory, days):
-    """Supprime les fichiers .zip plus anciens que le nombre de jours spécifié"""
+def check_and_delete_zip_files(directories_str, days):
+    """Supprime les fichiers .zip plus anciens que le nombre de jours spécifié dans tous les répertoires"""
     root.after(0, lambda: set_delete_ui_locked(True))
+    directories = [d.strip() for d in directories_str.split(";") if d.strip()]
+    if not directories:
+        display_status("[ERROR] No deletion folders selected", "red")
+        root.after(0, lambda: set_delete_ui_locked(False))
+        return
+
     now = datetime.now()
     delete_before = now - timedelta(days=days)
     deleted_count = 0
+    total_files = 0
+    processed = 0
+
     try:
-        zip_files = [f for f in os.listdir(directory) if f.endswith(".zip")]
-        total = len(zip_files)
-        for i, filename in enumerate(zip_files):
-            file_path = os.path.join(directory, filename)
-            file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-            if file_mod_time < delete_before:
-                os.remove(file_path)
-                deleted_count += 1
-                print(f"Deleted: {filename}")
-            progress = int(((i + 1) / total) * 100) if total > 0 else 100
-            root.after(
-                0,
-                lambda p=progress: (
-                    delete_progress_var.set(p),
-                    delete_progress_percent_label.config(text=f"{p}%"),
-                ),
-            )
+        # Count total files first
+        for directory in directories:
+            if os.path.exists(directory):
+                total_files += len(
+                    [f for f in os.listdir(directory) if f.endswith(".zip")]
+                )
+
+        if total_files == 0:
+            display_status("[OK] No files to delete", "#2E7D32")
+            return
+
+        for directory in directories:
+            if not os.path.exists(directory):
+                continue
+            zip_files = [f for f in os.listdir(directory) if f.endswith(".zip")]
+            for filename in zip_files:
+                file_path = os.path.join(directory, filename)
+                file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if file_mod_time < delete_before:
+                    os.remove(file_path)
+                    deleted_count += 1
+                    print(f"Deleted: {filename}")
+                processed += 1
+                progress = (
+                    int((processed / total_files) * 100) if total_files > 0 else 100
+                )
+                root.after(
+                    0,
+                    lambda p=progress: (
+                        delete_progress_var.set(p),
+                        delete_progress_percent_label.config(text=f"{p}%"),
+                    ),
+                )
         if deleted_count > 0:
             display_status(f"[OK] {deleted_count} file(s) deleted", "green")
         else:
@@ -484,23 +533,28 @@ def check_and_delete_zip_files(directory, days):
 
 
 # Créer une sauvegarde auto à partir des dossiers sources
-def create_backup(root_dirs, dest_dir):
-    """Crée un fichier ZIP de sauvegarde des dossiers spécifiés"""
+def create_backup(root_dirs, dest_dirs_str):
+    """Crée un fichier ZIP de sauvegarde des dossiers spécifiés dans chaque destination"""
     root.after(0, lambda: set_ui_locked(True))
+    dest_dirs = [d.strip() for d in dest_dirs_str.split(";") if d.strip()]
+    if not dest_dirs:
+        display_status("[ERROR] No destination folders selected", "red")
+        root.after(0, lambda: set_ui_locked(False))
+        return
     try:
-        if not os.path.exists(dest_dir):
-            os.makedirs(dest_dir)
+        for dest_dir in dest_dirs:
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir)
 
         now = datetime.now()
         date_str = now.strftime("%d-%m-%Y")
         backup_number = 1
         backup_name = f"Backup_{date_str}_{backup_number}.zip"
 
-        while os.path.exists(os.path.join(dest_dir, backup_name)):
+        # Check across all destination directories for existing backups
+        while any(os.path.exists(os.path.join(d, backup_name)) for d in dest_dirs):
             backup_number += 1
             backup_name = f"Backup_{date_str}_{backup_number}.zip"
-
-        zip_path = os.path.join(dest_dir, backup_name)
 
         total_files = 0
         for root_dir in root_dirs.split(";"):
@@ -514,25 +568,31 @@ def create_backup(root_dirs, dest_dir):
 
         current_file = 0
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as backup_zip:
-            for root_dir in root_dirs.split(";"):
-                root_dir = root_dir.strip()
-                if os.path.exists(root_dir):
-                    for foldername, subfolders, filenames in os.walk(root_dir):
-                        for filename in filenames:
-                            file_path = os.path.join(foldername, filename)
-                            archive_dir = os.path.basename(root_dir)
-                            backup_zip.write(
-                                file_path,
-                                os.path.join(
-                                    archive_dir, os.path.relpath(file_path, root_dir)
-                                ),
-                            )
-                            current_file += 1
-                            progress = int((current_file / total_files) * 100)
-                            progress_var.set(progress)
-                            progress_percent_label.config(text=f"{progress}%")
-                            progress_bar.update()
+        # Create backup in all destination directories
+        for dest_dir in dest_dirs:
+            zip_path = os.path.join(dest_dir, backup_name)
+            current_file = 0
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as backup_zip:
+                for root_dir in root_dirs.split(";"):
+                    root_dir = root_dir.strip()
+                    if os.path.exists(root_dir):
+                        for foldername, subfolders, filenames in os.walk(root_dir):
+                            for filename in filenames:
+                                file_path = os.path.join(foldername, filename)
+                                archive_dir = os.path.basename(root_dir)
+                                backup_zip.write(
+                                    file_path,
+                                    os.path.join(
+                                        archive_dir,
+                                        os.path.relpath(file_path, root_dir),
+                                    ),
+                                )
+                                current_file += 1
+                                progress = int((current_file / total_files) * 100)
+                                progress_var.set(progress)
+                                progress_percent_label.config(text=f"{progress}%")
+                                progress_bar.update()
 
         progress_var.set(0)
         progress_percent_label.config(text="0%")
@@ -558,15 +618,15 @@ def display_status(message, color):
 def manual_backup():
     """Lance une sauvegarde manuelle"""
     root_dirs = root_dirs_text.get_paths()
-    dest_dir = dest_dir_entry.get()
-    if root_dirs and dest_dir:
+    dest_dirs = dest_dirs_text.get_paths()
+    if root_dirs and dest_dirs:
         progress_var.set(0)
         threading.Thread(
-            target=create_backup, args=(root_dirs, dest_dir), daemon=True
+            target=create_backup, args=(root_dirs, dest_dirs), daemon=True
         ).start()
     else:
         display_status(
-            "[ERROR] Please select source folders and a destination",
+            "[ERROR] Please select source folders and destination(s)",
             "red",
         )
 
@@ -575,7 +635,7 @@ def manual_backup():
 def start_backup_schedule():
     """Démarre la sauvegarde automatique selon la fréquence définie"""
     root_dirs = root_dirs_text.get_paths()
-    dest_dir = dest_dir_entry.get()
+    dest_dirs = dest_dirs_text.get_paths()
     try:
         frequency_days = int(frequency_entry.get())
         hour = int(hour_entry.get())
@@ -586,11 +646,11 @@ def start_backup_schedule():
         print("Invalid input for frequency, hour or minute")
         return
 
-    if root_dirs and dest_dir:
+    if root_dirs and dest_dirs:
         stop_event.clear()
 
         schedule.every(frequency_days).days.at(backup_time).do(
-            create_backup, root_dirs, dest_dir
+            create_backup, root_dirs, dest_dirs
         )
 
         def run_schedule():
@@ -613,7 +673,7 @@ def start_backup_schedule():
         auto_backup_var.set(0)
         auto_backup_toggle.config(text="Enable Auto-Backup")
         display_status(
-            "[ERROR] Please select source folders and a destination",
+            "[ERROR] Please select source folders and destination(s)",
             "red",
         )
 
@@ -621,6 +681,90 @@ def start_backup_schedule():
 stop_event = threading.Event()
 delete_stop_event = threading.Event()
 _saved_button_states = {}
+
+
+def force_purge_all_backups():
+    """Force delete tous les fichiers dans les dossiers de monitoring avec confirmation"""
+    delete_dirs = delete_dirs_text.get_paths()
+    if not delete_dirs:
+        display_status("[ERROR] No monitoring folders selected", "red")
+        return
+
+    # Demander double confirmation
+    if not messagebox.askyesno(
+        "Force Purge All Backups",
+        "WARNING: This will DELETE ALL FILES in all monitoring folders.\n\nAre you sure?",
+    ):
+        return
+
+    if not messagebox.askyesno(
+        "FINAL CONFIRMATION",
+        "This action is PERMANENT and CANNOT be undone.\n\nDelete ALL files in:\n"
+        + "\n".join([d.strip() for d in delete_dirs.split(";") if d.strip()])
+        + "\n\nProceed?",
+    ):
+        return
+
+    root.after(0, lambda: set_delete_ui_locked(True))
+
+    def _purge():
+        directories = [d.strip() for d in delete_dirs.split(";") if d.strip()]
+        total_files = 0
+        deleted_count = 0
+
+        try:
+            for directory in directories:
+                if os.path.exists(directory):
+                    total_files += len(os.listdir(directory))
+
+            if total_files == 0:
+                display_status("[OK] No files to purge", "#2E7D32")
+                root.after(0, lambda: set_delete_ui_locked(False))
+                return
+
+            processed = 0
+            for directory in directories:
+                if os.path.exists(directory):
+                    for filename in os.listdir(directory):
+                        file_path = os.path.join(directory, filename)
+                        try:
+                            if os.path.isfile(file_path):
+                                os.remove(file_path)
+                            elif os.path.isdir(file_path):
+                                import shutil
+
+                                shutil.rmtree(file_path)
+                            deleted_count += 1
+                        except Exception as e:
+                            print(f"Error deleting {file_path}: {e}")
+
+                        processed += 1
+                        progress = (
+                            int((processed / total_files) * 100)
+                            if total_files > 0
+                            else 100
+                        )
+                        root.after(
+                            0,
+                            lambda p=progress: (
+                                delete_progress_var.set(p),
+                                delete_progress_percent_label.config(text=f"{p}%"),
+                            ),
+                        )
+
+            delete_progress_var.set(0)
+            delete_progress_percent_label.config(text="0%")
+            display_status(f"[OK] Purged {deleted_count} item(s)", "green")
+        except Exception as e:
+            delete_progress_var.set(0)
+            delete_progress_percent_label.config(text="0%")
+            display_status(f"[ERROR] Purge error: {str(e)}", "red")
+            print(f"Error during purge: {e}")
+        finally:
+            root.after(0, lambda: set_delete_ui_locked(False))
+            update_delete_info_display()
+
+    threading.Thread(target=_purge, daemon=True).start()
 
 
 # Arrêt sauvegarde automatique
@@ -645,7 +789,7 @@ def add_root_folder():
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
 def start_auto_delete_schedule():
     """Démarre la suppression automatique quotidienne à l'heure/minute configurée"""
-    directory = directory_entry.get()
+    directories = delete_dirs_text.get_paths()
     try:
         days = int(days_entry.get())
         delete_hour = int(delete_hour_entry.get())
@@ -655,10 +799,10 @@ def start_auto_delete_schedule():
         display_status("[ERROR] Invalid parameters for deletion", "red")
         print("Invalid parameters for delete schedule")
         return
-    if directory and os.path.exists(directory):
+    if directories:
         delete_stop_event.clear()
         schedule.every().day.at(delete_time).do(
-            check_and_delete_zip_files, directory, days
+            check_and_delete_zip_files, directories, days
         )
 
         def run_schedule():
@@ -677,7 +821,7 @@ def start_auto_delete_schedule():
     else:
         auto_delete_var.set(0)
         auto_delete_toggle.config(text="Enable Auto-Delete")
-        display_status("[ERROR] Invalid directory", "red")
+        display_status("[ERROR] No deletion folders selected", "red")
 
 
 # Arrêter l'auto suppression
@@ -709,36 +853,36 @@ def toggle_auto_delete():
 # Suppression manuelle
 def manual_delete():
     """Lance une suppression manuelle"""
-    directory = directory_entry.get()
+    directories = delete_dirs_text.get_paths()
     try:
         days = int(days_entry.get())
     except ValueError:
         display_status("[ERROR] Invalid number of days", "red")
         print("Invalid number of days")
         return
-    if directory and os.path.exists(directory):
+    if directories:
         threading.Thread(
-            target=check_and_delete_zip_files, args=(directory, days), daemon=True
+            target=check_and_delete_zip_files, args=(directories, days), daemon=True
         ).start()
     else:
-        display_status("[ERROR] Invalid directory", "red")
+        display_status("[ERROR] No deletion folders selected", "red")
 
 
 def browse_dest_folder():
     """Ouvre un dialogue pour sélectionner le dossier de destination"""
     folder_selected = filedialog.askdirectory(title="Select destination folder")
-    if folder_selected:
-        dest_dir_entry.delete(0, tk.END)
-        dest_dir_entry.insert(0, folder_selected)
+    if folder_selected and folder_selected not in dest_dirs_text.paths:
+        dest_dirs_text.paths.append(folder_selected)
+        dest_dirs_text.update_display()
         update_backup_info_display()
 
 
 def browse_delete_folder():
     """Ouvre un dialogue pour sélectionner le dossier à surveiller"""
     folder_selected = filedialog.askdirectory(title="Select folder to monitor")
-    if folder_selected:
-        directory_entry.delete(0, tk.END)
-        directory_entry.insert(0, folder_selected)
+    if folder_selected and folder_selected not in delete_dirs_text.paths:
+        delete_dirs_text.paths.append(folder_selected)
+        delete_dirs_text.update_display()
         update_delete_info_display()
 
 
@@ -775,14 +919,14 @@ def new_profile():
     global active_profile
     active_profile = None
     root_dirs_text.set_paths("")
-    dest_dir_entry.delete(0, tk.END)
+    dest_dirs_text.set_paths("")
     frequency_entry.delete(0, tk.END)
     frequency_entry.insert(0, "1")
     hour_entry.delete(0, tk.END)
     hour_entry.insert(0, "2")
     minute_entry.delete(0, tk.END)
     minute_entry.insert(0, "0")
-    directory_entry.delete(0, tk.END)
+    delete_dirs_text.set_paths("")
     days_entry.delete(0, tk.END)
     days_entry.insert(0, "30")
     delete_hour_entry.delete(0, tk.END)
@@ -960,8 +1104,14 @@ style.configure(
 style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"))
 style.configure("Thick.Horizontal.TProgressbar", thickness=28)
 style.configure("DarkAccent.TButton", font=("Segoe UI", 10, "bold"))
-style.map("DarkAccent.TButton",
-    background=[("active", "#1B5E20"), ("pressed", "#145214"), ("!active", "#2E7D32"), ("disabled", "#555555")],
+style.map(
+    "DarkAccent.TButton",
+    background=[
+        ("active", "#1B5E20"),
+        ("pressed", "#145214"),
+        ("!active", "#2E7D32"),
+        ("disabled", "#555555"),
+    ],
     foreground=[("disabled", "#aaaaaa"), ("!disabled", "white")],
 )
 
@@ -974,6 +1124,7 @@ def _make_time_vcmd(max_val):
             return 0 <= int(new_value) <= max_val
         except ValueError:
             return False
+
     return root.register(validate), "%P"
 
 
@@ -1058,6 +1209,8 @@ class TagsWidget:
         """Gère le scroll à la molette - uniquement si le contenu dépasse"""
         # Vérifier si le contenu dépasse la hauteur du canvas
         scrollregion = self.canvas.cget("scrollregion")
+        can_scroll = True
+
         if scrollregion:
             # scrollregion est au format "x1 y1 x2 y2"
             try:
@@ -1065,19 +1218,22 @@ class TagsWidget:
                 content_height = parts[3] - parts[1]
                 canvas_height = self.canvas.winfo_height()
 
-                # Bloquer le scroll si le contenu rentre entièrement
+                # Ne pas scroller si le contenu rentre entièrement
                 if content_height <= canvas_height:
-                    return "break"
+                    can_scroll = False
             except:
                 pass
 
-        # Faire le scroll si le contenu dépasse
-        if event.num == 5 or event.delta < 0:
-            self.canvas.yview_scroll(3, "units")
-        elif event.num == 4 or event.delta > 0:
-            self.canvas.yview_scroll(-3, "units")
+        # Faire le scroll seulement si le contenu dépasse
+        if can_scroll:
+            if event.num == 5 or event.delta < 0:
+                self.canvas.yview_scroll(3, "units")
+            elif event.num == 4 or event.delta > 0:
+                self.canvas.yview_scroll(-3, "units")
+            return "break"  # Consommer l'événement si on a scrollé
 
-        return "break"
+        # Laisser passer à la zone scrollable parente
+        return None
 
     def _on_frame_configure(self, event=None):
         """Rafraîchit la région scrollable"""
@@ -1390,28 +1546,30 @@ add_root_button = ttk.Button(
 add_root_button.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 # Destination
-ttk.Label(backup_inner, text="Destination folder:", font=("Segoe UI", 10)).grid(
+ttk.Label(backup_inner, text="Destination folders:", font=("Segoe UI", 10)).grid(
     row=4, column=0, sticky="w", pady=(8, 3)
 )
-dest_frame = ttk.Frame(backup_inner)
-dest_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-dest_frame.columnconfigure(0, weight=1)
+dest_dirs_text = TagsWidget(backup_inner)
+dest_dirs_text.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
-dest_dir_entry = ttk.Entry(dest_frame)
-dest_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
-browse_dest_button = ttk.Button(
-    dest_frame,
-    text="Browse",
+def _on_dest_dirs_change():
+    update_backup_info_display()
+
+
+dest_dirs_text.on_change = _on_dest_dirs_change
+
+add_dest_button = ttk.Button(
+    backup_inner,
+    text="+ Add Destination Folder",
     command=browse_dest_folder,
-    width=12,
     style="Accent.TButton",
 )
-browse_dest_button.pack(side="left")
+add_dest_button.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 # Fréquence
 freq_frame = ttk.LabelFrame(backup_inner, text="Schedule", padding=10)
-freq_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+freq_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 freq_frame.columnconfigure(1, weight=1)
 
 freq_row = ttk.Frame(freq_frame)
@@ -1427,12 +1585,26 @@ time_row = ttk.Frame(freq_frame)
 time_row.pack(fill="x", pady=4)
 
 ttk.Label(time_row, text="At", font=("Segoe UI", 10)).pack(side="left", padx=5)
-hour_entry = ttk.Spinbox(time_row, width=4, from_=0, to=23, validate="key", validatecommand=_make_time_vcmd(23))
+hour_entry = ttk.Spinbox(
+    time_row,
+    width=4,
+    from_=0,
+    to=23,
+    validate="key",
+    validatecommand=_make_time_vcmd(23),
+)
 hour_entry.delete(0, tk.END)
 hour_entry.insert(0, "2")
 hour_entry.pack(side="left", padx=2)
 ttk.Label(time_row, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
-minute_entry = ttk.Spinbox(time_row, width=4, from_=0, to=59, validate="key", validatecommand=_make_time_vcmd(59))
+minute_entry = ttk.Spinbox(
+    time_row,
+    width=4,
+    from_=0,
+    to=59,
+    validate="key",
+    validatecommand=_make_time_vcmd(59),
+)
 minute_entry.delete(0, tk.END)
 minute_entry.insert(0, "0")
 minute_entry.pack(side="left", padx=2)
@@ -1442,7 +1614,7 @@ ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 progress_var = tk.IntVar()
 delete_progress_var = tk.IntVar()
 progress_frame = ttk.Frame(backup_inner)
-progress_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+progress_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 progress_frame.columnconfigure(0, weight=1)
 
 progress_bar = ttk.Progressbar(
@@ -1461,7 +1633,7 @@ progress_percent_label.grid(row=0, column=1, sticky="e")
 
 # Info labels
 info_frame = ttk.Frame(backup_inner)
-info_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
+info_frame.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
 
 backup_size_label = ttk.Label(
     info_frame,
@@ -1513,6 +1685,7 @@ delete_button_frame = ttk.Frame(delete_frame)
 delete_button_frame.pack(side="bottom", fill="x", pady=(8, 0))
 delete_button_frame.columnconfigure(0, weight=1)
 delete_button_frame.columnconfigure(1, weight=1)
+delete_button_frame.columnconfigure(2, weight=1)
 
 auto_delete_var = tk.IntVar(value=0)
 auto_delete_toggle = ttk.Checkbutton(
@@ -1530,7 +1703,15 @@ manual_delete_button = ttk.Button(
     command=manual_delete,
     style="Accent.TButton",
 )
-manual_delete_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+manual_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
+
+force_purge_button = ttk.Button(
+    delete_button_frame,
+    text="Force Purge All",
+    command=force_purge_all_backups,
+    style="DarkAccent.TButton",
+)
+force_purge_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # Zone scrollable
 delete_scroll_container, delete_inner, delete_canvas = _make_scrollable_area(
@@ -1547,28 +1728,30 @@ delete_label = ttk.Label(
 delete_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
 # Dossier à surveiller
-ttk.Label(delete_inner, text="Folder to monitor:", font=("Segoe UI", 10)).grid(
+ttk.Label(delete_inner, text="Folders to monitor:", font=("Segoe UI", 10)).grid(
     row=1, column=0, sticky="w", pady=(8, 3)
 )
-dir_frame = ttk.Frame(delete_inner)
-dir_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-dir_frame.columnconfigure(0, weight=1)
+delete_dirs_text = TagsWidget(delete_inner)
+delete_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
-directory_entry = ttk.Entry(dir_frame)
-directory_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
-browse_delete_button = ttk.Button(
-    dir_frame,
-    text="Browse",
+def _on_delete_dirs_change():
+    update_delete_info_display()
+
+
+delete_dirs_text.on_change = _on_delete_dirs_change
+
+add_delete_button = ttk.Button(
+    delete_inner,
+    text="+ Add Deletion Folder",
     command=browse_delete_folder,
-    width=12,
     style="Accent.TButton",
 )
-browse_delete_button.pack(side="left")
+add_delete_button.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 # Paramètres de suppression
 params_frame = ttk.LabelFrame(delete_inner, text="Settings", padding=10)
-params_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+params_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 params_frame.columnconfigure(1, weight=1)
 
 ttk.Label(params_frame, text="Keep backups since:", font=("Segoe UI", 10)).pack(
@@ -1593,12 +1776,26 @@ schedule_frame = ttk.Frame(params_frame)
 schedule_frame.pack(fill="x", pady=4)
 
 ttk.Label(schedule_frame, text="At", font=("Segoe UI", 10)).pack(side="left", padx=5)
-delete_hour_entry = ttk.Spinbox(schedule_frame, width=4, from_=0, to=23, validate="key", validatecommand=_make_time_vcmd(23))
+delete_hour_entry = ttk.Spinbox(
+    schedule_frame,
+    width=4,
+    from_=0,
+    to=23,
+    validate="key",
+    validatecommand=_make_time_vcmd(23),
+)
 delete_hour_entry.delete(0, tk.END)
 delete_hour_entry.insert(0, "3")
 delete_hour_entry.pack(side="left", padx=2)
 ttk.Label(schedule_frame, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
-delete_minute_entry = ttk.Spinbox(schedule_frame, width=4, from_=0, to=59, validate="key", validatecommand=_make_time_vcmd(59))
+delete_minute_entry = ttk.Spinbox(
+    schedule_frame,
+    width=4,
+    from_=0,
+    to=59,
+    validate="key",
+    validatecommand=_make_time_vcmd(59),
+)
 delete_minute_entry.delete(0, tk.END)
 delete_minute_entry.insert(0, "0")
 delete_minute_entry.pack(side="left", padx=2)
@@ -1606,7 +1803,7 @@ ttk.Label(schedule_frame, text="min", font=("Segoe UI", 10)).pack(side="left", p
 
 # Barre de progression (suppression)
 delete_progress_frame = ttk.Frame(delete_inner)
-delete_progress_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+delete_progress_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 delete_progress_frame.columnconfigure(0, weight=1)
 
 delete_progress_bar = ttk.Progressbar(
@@ -1625,7 +1822,7 @@ delete_progress_percent_label.grid(row=0, column=1, sticky="e")
 
 # Info labels - simulation stats
 delete_info_frame = ttk.Frame(delete_inner)
-delete_info_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
+delete_info_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
 
 delete_folder_size_label = ttk.Label(
     delete_info_frame,
@@ -1673,12 +1870,12 @@ def set_delete_ui_locked(locked):
     global _saved_button_states
 
     widgets_to_toggle = [
-        directory_entry,
-        browse_delete_button,
+        add_delete_button,
         days_entry,
         delete_hour_entry,
         delete_minute_entry,
         manual_delete_button,
+        force_purge_button,
         refresh_delete_info_button,
     ]
 
@@ -1689,11 +1886,15 @@ def set_delete_ui_locked(locked):
         auto_delete_toggle.config(state="disabled")
         for w in widgets_to_toggle:
             w.config(state="disabled")
+        delete_dirs_text.set_disabled(True)
     else:
-        auto_delete_toggle.config(state=_saved_button_states.get("auto_delete", "normal"))
+        auto_delete_toggle.config(
+            state=_saved_button_states.get("auto_delete", "normal")
+        )
         auto_delete_var.set(_saved_button_states.get("auto_delete_var", 0))
         for w in widgets_to_toggle:
             w.config(state="normal")
+        delete_dirs_text.set_disabled(False)
 
 
 def set_ui_locked(locked):
@@ -1702,8 +1903,7 @@ def set_ui_locked(locked):
 
     widgets_to_toggle = [
         add_root_button,
-        dest_dir_entry,
-        browse_dest_button,
+        add_dest_button,
         frequency_entry,
         hour_entry,
         minute_entry,
@@ -1725,12 +1925,30 @@ def set_ui_locked(locked):
         for w in widgets_to_toggle:
             w.config(state="disabled")
         root_dirs_text.set_disabled(True)
+        dest_dirs_text.set_disabled(True)
     else:
-        auto_backup_toggle.config(state=_saved_button_states.get("auto_backup", "normal"))
+        auto_backup_toggle.config(
+            state=_saved_button_states.get("auto_backup", "normal")
+        )
         auto_backup_var.set(_saved_button_states.get("auto_backup_var", 0))
         for w in widgets_to_toggle:
             w.config(state="normal")
         root_dirs_text.set_disabled(False)
+        dest_dirs_text.set_disabled(False)
+
+
+def _disable_spinbox_scroll():
+    """Désactive le scroll de la molette sur les Spinbox des heures/minutes"""
+
+    def _on_spinbox_scroll(event):
+        return "break"  # Bloque l'événement de scroll
+
+    spinbox_widgets = [hour_entry, minute_entry, delete_hour_entry, delete_minute_entry]
+
+    for spinbox in spinbox_widgets:
+        spinbox.bind("<MouseWheel>", _on_spinbox_scroll)
+        spinbox.bind("<Button-4>", _on_spinbox_scroll)
+        spinbox.bind("<Button-5>", _on_spinbox_scroll)
 
 
 # Routage molette → bon canvas selon la zone survolée
@@ -1776,17 +1994,16 @@ def _setup_scroll_routing():
     root.bind_all("<Button-5>", _on_scroll, add="+")
 
 
+_disable_spinbox_scroll()
 root.after(100, _setup_scroll_routing)
 
 # Event bindings to update info displays
 root_dirs_text.input_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
-dest_dir_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
 frequency_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
 hour_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
 minute_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
 days_entry.bind("<KeyRelease>", lambda e: update_delete_info_display())
 days_entry.bind("<FocusOut>", lambda e: update_delete_info_display())
-directory_entry.bind("<KeyRelease>", lambda e: update_delete_info_display())
 
 # Démarrer la sauvegarde automatique périodique (toutes les 5 minutes)
 root.after(300000, periodic_autosave)

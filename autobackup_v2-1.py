@@ -377,7 +377,7 @@ def check_and_delete_zip_files(directory, days):
         if deleted_count > 0:
             display_status(f"[OK] {deleted_count} fichier(s) supprimé(s)", "green")
         else:
-            display_status("[OK] Aucun fichier à supprimer", "blue")
+            display_status("[OK] Aucun fichier à supprimer", "#2E7D32")
     except Exception as e:
         display_status(f"[ERROR] Erreur lors de la suppression: {str(e)}", "red")
         print(f"Error during deletion: {e}")
@@ -430,13 +430,16 @@ def create_backup(root_dirs, dest_dir):
                             current_file += 1
                             progress = int((current_file / total_files) * 100)
                             progress_var.set(progress)
+                            progress_percent_label.config(text=f"{progress}%")
                             progress_bar.update()
 
         progress_var.set(0)
+        progress_percent_label.config(text="0%")
         display_status(f"[OK] Backup terminée: {backup_name}", "green")
         print(f"Backup created: {backup_name}")
     except Exception as e:
         progress_var.set(0)
+        progress_percent_label.config(text="0%")
         display_status(f"[ERROR] Erreur Backup: {str(e)}", "red")
         print(f"Error during backup: {e}")
 
@@ -524,7 +527,7 @@ def stop_backup_schedule():
     stop_event.set()
     start_backup_button.config(state="normal")
     stop_backup_button.config(state="disabled")
-    display_status("[OK] Backup automatique arrêtée", "blue")
+    display_status("[OK] Backup automatique arrêtée", "#2E7D32")
     update_next_backup_display()
     print("Automatic backup stopped")
 
@@ -583,7 +586,7 @@ def stop_auto_delete_schedule():
     delete_stop_event.set()
     start_delete_button.config(state="normal")
     stop_delete_button.config(state="disabled")
-    display_status("[OK] Suppression automatique arrêtée", "blue")
+    display_status("[OK] Suppression automatique arrêtée", "#2E7D32")
     print("Automatic delete stopped")
 
 
@@ -677,7 +680,10 @@ def new_profile():
     delete_hour_entry.insert(0, "3")
     delete_minute_entry.delete(0, tk.END)
     delete_minute_entry.insert(0, "0")
-    display_status("[OK] Nouveau profil vierge — configurez et utilisez 'Save Profile As'", "blue")
+    display_status(
+        "[OK] Nouveau profil vierge — configurez et utilisez 'Save Profile As'",
+        "orange",
+    )
     update_backup_info_display()
 
 
@@ -845,6 +851,7 @@ style.configure(
 
 # Ajouter des styles d'accentuation verte (Forest style)
 style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"))
+style.configure("Thick.Horizontal.TProgressbar", thickness=28)
 
 
 # Configurer les zones de texte après création
@@ -1078,8 +1085,16 @@ apropos_button.pack(side="left", padx=5)
 profiles_frame = ttk.LabelFrame(main_frame, text="PROFILS", padding=10)
 profiles_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8), padx=0)
 
-profiles_list_label = ttk.Label(profiles_frame, text="Profils sauvegardés:")
-profiles_list_label.pack(anchor="w", pady=(0, 5))
+profiles_header_frame = ttk.Frame(profiles_frame)
+profiles_header_frame.pack(fill="x", pady=(0, 5))
+
+profiles_list_label = ttk.Label(profiles_header_frame, text="Profils sauvegardés:")
+profiles_list_label.pack(side="left", anchor="w")
+
+status_label = ttk.Label(
+    profiles_header_frame, text="", foreground="#2E7D32", font=("Segoe UI", 10)
+)
+status_label.pack(side="right", anchor="e")
 
 profile_listbox = tk.Listbox(
     profiles_frame, height=3, font=("Consolas", 9), bg="#3a3a3a", fg="#e0e0e0"
@@ -1232,8 +1247,12 @@ ttk.Label(backup_inner, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
 )
 root_dirs_text = TagsWidget(backup_inner)
 root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+
 def _on_root_dirs_change():
     update_backup_info_display()
+
+
 root_dirs_text.on_change = _on_root_dirs_change
 
 add_root_button = ttk.Button(
@@ -1293,21 +1312,33 @@ ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
 # Barre de progression
 progress_var = tk.IntVar()
+progress_frame = ttk.Frame(backup_inner)
+progress_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+progress_frame.columnconfigure(0, weight=1)
+
 progress_bar = ttk.Progressbar(
-    backup_inner,
+    progress_frame,
     orient="horizontal",
-    length=400,
     mode="determinate",
     variable=progress_var,
+    style="Thick.Horizontal.TProgressbar",
 )
-progress_bar.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+progress_bar.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+progress_percent_label = ttk.Label(
+    progress_frame, text="0%", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
+)
+progress_percent_label.grid(row=0, column=1, sticky="e")
 
 # Info labels
 info_frame = ttk.Frame(backup_inner)
 info_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
 
 backup_size_label = ttk.Label(
-    info_frame, text="Taille totale: -", foreground="#2E7D32", font=("Segoe UI", 9)
+    info_frame,
+    text="Taille totale sources: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
 )
 backup_size_label.pack(anchor="w", pady=2)
 
@@ -1342,12 +1373,6 @@ next_backup_label = ttk.Label(
     info_frame, text="Prochaine backup: -", foreground="#2E7D32", font=("Segoe UI", 9)
 )
 next_backup_label.pack(anchor="w", pady=2)
-
-# Statut
-status_label = ttk.Label(
-    backup_inner, text="", foreground="#2E7D32", font=("Segoe UI", 10)
-)
-status_label.grid(row=9, column=0, columnspan=2, sticky="ew", pady=5)
 
 
 # ============ PARTIE SUPPRESSION (Colonne droite) ============

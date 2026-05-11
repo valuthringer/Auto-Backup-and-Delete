@@ -1353,26 +1353,26 @@ class TagsWidget:
 # Frame principal avec scrollbar
 main_frame = ttk.Frame(root)
 main_frame.pack(fill="both", expand=True, padx=12, pady=12)
-main_frame.rowconfigure(1, weight=1)
+main_frame.rowconfigure(2, weight=1)
 main_frame.columnconfigure(0, weight=1)
 
 # Barre de boutons supérieure
 top_buttons_frame = ttk.Frame(main_frame)
-top_buttons_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-
-help_button = ttk.Button(
-    top_buttons_frame, text="Help", command=open_help, style="Accent.TButton"
-)
-help_button.pack(side="left", padx=5)
+top_buttons_frame.grid(row=0, column=0, sticky="ew", pady=(0, 4))
 
 apropos_button = ttk.Button(
     top_buttons_frame, text="About", command=open_a_propos, style="Accent.TButton"
 )
-apropos_button.pack(side="left", padx=5)
+apropos_button.pack(side="right", padx=5)
+
+help_button = ttk.Button(
+    top_buttons_frame, text="Help", command=open_help, style="Accent.TButton"
+)
+help_button.pack(side="right", padx=5)
 
 # ============ SECTION PROFILS ============
 profiles_frame = ttk.LabelFrame(main_frame, text="PROFILES", padding=10)
-profiles_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8), padx=0)
+profiles_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8), padx=0)
 
 profiles_header_frame = ttk.Frame(profiles_frame)
 profiles_header_frame.pack(fill="x", pady=(0, 5))
@@ -1476,7 +1476,7 @@ def _make_scrollable_area(parent):
 
 # Conteneur à deux colonnes
 columns_frame = ttk.Frame(main_frame)
-columns_frame.grid(row=1, column=0, sticky="nsew", pady=0, padx=0)
+columns_frame.grid(row=2, column=0, sticky="nsew", pady=0, padx=0)
 columns_frame.rowconfigure(0, weight=1)
 columns_frame.columnconfigure(0, weight=1)
 columns_frame.columnconfigure(1, weight=1)

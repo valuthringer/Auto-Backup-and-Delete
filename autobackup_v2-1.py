@@ -537,7 +537,6 @@ def add_root_folder():
         root_dirs_text.paths.append(folder_selected)
         root_dirs_text.update_display()
         update_backup_info_display()
-        auto_save_active_profile()
 
 
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
@@ -615,7 +614,6 @@ def browse_dest_folder():
         dest_dir_entry.delete(0, tk.END)
         dest_dir_entry.insert(0, folder_selected)
         update_backup_info_display()
-        auto_save_active_profile()
 
 
 def browse_delete_folder():
@@ -626,7 +624,6 @@ def browse_delete_folder():
     if folder_selected:
         directory_entry.delete(0, tk.END)
         directory_entry.insert(0, folder_selected)
-        auto_save_active_profile()
 
 
 # Fonctions UI pour les profils
@@ -659,6 +656,46 @@ def delete_selected_profile():
             "Confirmation", f"Supprimer le profil '{profile_name}' ?"
         ):
             delete_profile(profile_name)
+
+
+def new_profile():
+    """Crée un nouveau profil vierge (réinitialise tous les champs)"""
+    global active_profile
+    active_profile = None
+    root_dirs_text.set_paths("")
+    dest_dir_entry.delete(0, tk.END)
+    frequency_entry.delete(0, tk.END)
+    frequency_entry.insert(0, "1")
+    hour_entry.delete(0, tk.END)
+    hour_entry.insert(0, "2")
+    minute_entry.delete(0, tk.END)
+    minute_entry.insert(0, "0")
+    directory_entry.delete(0, tk.END)
+    days_entry.delete(0, tk.END)
+    days_entry.insert(0, "30")
+    delete_hour_entry.delete(0, tk.END)
+    delete_hour_entry.insert(0, "3")
+    delete_minute_entry.delete(0, tk.END)
+    delete_minute_entry.insert(0, "0")
+    display_status("[OK] Nouveau profil vierge — configurez et utilisez 'Save Profile As'", "blue")
+    update_backup_info_display()
+
+
+def save_active_profile_manual():
+    """Sauvegarde manuellement la config dans le profil actif"""
+    if active_profile is None:
+        display_status("[ERROR] Aucun profil actif — utilisez 'Save Profile As'", "red")
+        return
+    auto_save_active_profile()
+    display_status(f"[OK] Profil '{active_profile}' sauvegardé", "green")
+
+
+def periodic_autosave():
+    """Auto-sauvegarde du profil actif toutes les 5 minutes"""
+    if active_profile is not None:
+        auto_save_active_profile()
+        display_status("[OK] Sauvegarde automatique effectuée", "#2E7D32")
+    root.after(300000, periodic_autosave)
 
 
 ###############################################################
@@ -1052,6 +1089,15 @@ profile_listbox.pack(fill="x", pady=5)
 profiles_buttons_frame = ttk.Frame(profiles_frame)
 profiles_buttons_frame.pack(fill="x", pady=5)
 
+new_profile_button = ttk.Button(
+    profiles_buttons_frame,
+    text="Nouveau Profile",
+    command=new_profile,
+    style="Accent.TButton",
+    width=13,
+)
+new_profile_button.pack(side="left", padx=3)
+
 load_profile_button = ttk.Button(
     profiles_buttons_frame,
     text="Load Profile",
@@ -1064,11 +1110,20 @@ load_profile_button.pack(side="left", padx=3)
 save_profile_button = ttk.Button(
     profiles_buttons_frame,
     text="Save Profile",
-    command=save_profile_dialog,
+    command=save_active_profile_manual,
     style="Accent.TButton",
     width=10,
 )
 save_profile_button.pack(side="left", padx=3)
+
+save_profile_as_button = ttk.Button(
+    profiles_buttons_frame,
+    text="Save Profile As",
+    command=save_profile_dialog,
+    style="Accent.TButton",
+    width=13,
+)
+save_profile_as_button.pack(side="left", padx=3)
 
 delete_profile_button = ttk.Button(
     profiles_buttons_frame,
@@ -1179,7 +1234,6 @@ root_dirs_text = TagsWidget(backup_inner)
 root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 def _on_root_dirs_change():
     update_backup_info_display()
-    auto_save_active_profile()
 root_dirs_text.on_change = _on_root_dirs_change
 
 add_root_button = ttk.Button(
@@ -1456,16 +1510,15 @@ def _setup_scroll_routing():
 
 root.after(100, _setup_scroll_routing)
 
-# Event bindings to update info displays and auto-save config
+# Event bindings to update info displays
 root_dirs_text.input_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
-dest_dir_entry.bind("<KeyRelease>", lambda e: (update_backup_info_display(), auto_save_active_profile()))
-frequency_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
-hour_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
-minute_entry.bind("<KeyRelease>", lambda e: (update_next_backup_display(), auto_save_active_profile()))
-directory_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
-days_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
-delete_hour_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
-delete_minute_entry.bind("<KeyRelease>", lambda _: auto_save_active_profile())
+dest_dir_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
+frequency_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+hour_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+minute_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+
+# Démarrer la sauvegarde automatique périodique (toutes les 5 minutes)
+root.after(300000, periodic_autosave)
 
 # Démarrage interface
 root.mainloop()

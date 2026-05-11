@@ -1,14 +1,107 @@
 import os
 import time
 import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
+from tkinter import filedialog, ttk, messagebox, simpledialog
 from datetime import datetime, timedelta
 import threading
 import schedule
 import zipfile
 import webbrowser
 import sys
+import json
 from pathlib import Path
+
+
+# Configuration profiles management
+def get_config_dir():
+    """Retourne le répertoire de configuration (AppData sur Windows, ~/.auto-backup-delete sur Unix)"""
+    if sys.platform == "win32":
+        config_dir = Path(os.getenv("APPDATA")) / "Auto-Backup-and-Delete"
+    else:
+        config_dir = Path.home() / ".auto-backup-delete"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+def get_profiles_file():
+    """Retourne le chemin du fichier de profils"""
+    return get_config_dir() / "profiles.json"
+
+
+def load_profiles_dict():
+    """Charge tous les profils depuis le fichier JSON"""
+    profiles_file = get_profiles_file()
+    if profiles_file.exists():
+        try:
+            with open(profiles_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Erreur chargement profils: {e}")
+            return {}
+    return {}
+
+
+def save_profiles_dict(profiles):
+    """Sauvegarde les profils dans le fichier JSON"""
+    profiles_file = get_profiles_file()
+    try:
+        with open(profiles_file, "w", encoding="utf-8") as f:
+            json.dump(profiles, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Erreur sauvegarde profils: {e}")
+
+
+def save_current_config_as_profile(profile_name):
+    """Sauvegarde la configuration actuelle comme un profil"""
+    profiles = load_profiles_dict()
+    profiles[profile_name] = {
+        "root_dirs": root_dirs_text.get_paths(),
+        "dest_dir": dest_dir_entry.get(),
+        "frequency_days": frequency_entry.get(),
+        "hour": hour_entry.get(),
+        "directory": directory_entry.get(),
+        "days": days_entry.get(),
+    }
+    save_profiles_dict(profiles)
+    display_status(f"[OK] Profil '{profile_name}' sauvegardé", "green")
+    refresh_profile_list()
+
+
+def load_profile_config(profile_name):
+    """Charge une configuration depuis un profil"""
+    profiles = load_profiles_dict()
+    if profile_name in profiles:
+        config = profiles[profile_name]
+        root_dirs_text.set_paths(config.get("root_dirs", ""))
+        dest_dir_entry.delete(0, tk.END)
+        dest_dir_entry.insert(0, config.get("dest_dir", ""))
+        frequency_entry.delete(0, tk.END)
+        frequency_entry.insert(0, config.get("frequency_days", "1"))
+        hour_entry.delete(0, tk.END)
+        hour_entry.insert(0, config.get("hour", "2"))
+        directory_entry.delete(0, tk.END)
+        directory_entry.insert(0, config.get("directory", ""))
+        days_entry.delete(0, tk.END)
+        days_entry.insert(0, config.get("days", "30"))
+        display_status(f"[OK] Profil '{profile_name}' chargé", "green")
+
+
+def delete_profile(profile_name):
+    """Supprime un profil"""
+    profiles = load_profiles_dict()
+    if profile_name in profiles:
+        del profiles[profile_name]
+        save_profiles_dict(profiles)
+        display_status(f"[OK] Profil '{profile_name}' supprimé", "green")
+        refresh_profile_list()
+
+
+def refresh_profile_list():
+    """Actualise la liste des profils dans l'UI"""
+    profiles = load_profiles_dict()
+    profile_listbox.delete(0, tk.END)
+    for profile_name in sorted(profiles.keys()):
+        profile_listbox.insert(tk.END, profile_name)
 
 
 # Tentative de charger le thème Forest-ttk
@@ -176,7 +269,7 @@ def display_status(message, color):
 # Backup manuelle
 def manual_backup():
     """Lance une sauvegarde manuelle"""
-    root_dirs = root_dirs_text.get("1.0", tk.END).strip()
+    root_dirs = root_dirs_text.get_paths()
     dest_dir = dest_dir_entry.get()
     if root_dirs and dest_dir:
         progress_var.set(0)
@@ -193,7 +286,7 @@ def manual_backup():
 # Démarrer la sauvegarde automatique
 def start_backup_schedule():
     """Démarre la sauvegarde automatique selon la fréquence définie"""
-    root_dirs = root_dirs_text.get("1.0", tk.END).strip()
+    root_dirs = root_dirs_text.get_paths()
     dest_dir = dest_dir_entry.get()
     try:
         frequency_days = int(frequency_entry.get())
@@ -251,13 +344,9 @@ def stop_backup_schedule():
 def add_root_folder():
     """Ajoute un dossier source à la liste"""
     folder_selected = filedialog.askdirectory(title="Sélectionner un dossier source")
-    if folder_selected:
-        current_text = root_dirs_text.get("1.0", tk.END).strip()
-        if current_text:
-            root_dirs_text.delete("1.0", tk.END)
-            root_dirs_text.insert("1.0", f"{current_text}; {folder_selected}")
-        else:
-            root_dirs_text.insert("1.0", folder_selected)
+    if folder_selected and folder_selected not in root_dirs_text.paths:
+        root_dirs_text.paths.append(folder_selected)
+        root_dirs_text.update_display()
 
 
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
@@ -336,6 +425,38 @@ def browse_delete_folder():
     if folder_selected:
         directory_entry.delete(0, tk.END)
         directory_entry.insert(0, folder_selected)
+
+
+# Fonctions UI pour les profils
+def save_profile_dialog():
+    """Ouvre un dialogue pour nommer et sauvegarder un profil"""
+    profile_name = simpledialog.askstring(
+        "Sauvegarder profil", "Nom du profil:", parent=root
+    )
+    if profile_name:
+        if profile_name.strip():
+            save_current_config_as_profile(profile_name.strip())
+        else:
+            display_status("[ERROR] Nom de profil vide", "red")
+
+
+def load_selected_profile():
+    """Charge le profil sélectionné"""
+    selection = profile_listbox.curselection()
+    if selection:
+        profile_name = profile_listbox.get(selection[0])
+        load_profile_config(profile_name)
+
+
+def delete_selected_profile():
+    """Supprime le profil sélectionné après confirmation"""
+    selection = profile_listbox.curselection()
+    if selection:
+        profile_name = profile_listbox.get(selection[0])
+        if messagebox.askyesno(
+            "Confirmation", f"Supprimer le profil '{profile_name}' ?"
+        ):
+            delete_profile(profile_name)
 
 
 ###############################################################
@@ -462,8 +583,8 @@ def open_a_propos():
 # Création de la fenêtre principale
 root = tk.Tk()
 root.title("Auto Backup & Delete by @valuthringer")
-root.geometry("900x700")
-root.minsize(900, 600)
+root.geometry("1000x800")
+root.minsize(1000, 800)
 
 # Charger le thème
 load_forest_theme()
@@ -495,28 +616,209 @@ def configure_text_widget(widget):
     )
 
 
+class TagsWidget:
+    """Widget personnalisé avec liste scrollable de tags/paths en blocs"""
+
+    def __init__(self, parent, **kwargs):
+        self.paths = []
+        self.main_frame = ttk.Frame(parent)
+
+        # Frame pour l'input EN HAUT
+        self.input_frame = ttk.Frame(self.main_frame)
+        self.input_frame.pack(fill="x", pady=(0, 5))
+
+        self.input_entry = ttk.Entry(self.input_frame)
+        self.input_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.input_entry.bind("<Return>", lambda e: self.add_tag_from_input())
+
+        self.ok_button = ttk.Button(
+            self.input_frame, text="OK", command=self.add_tag_from_input, width=5
+        )
+        self.ok_button.pack(side="left")
+
+        # Canvas SCROLLABLE pour les tags
+        canvas_frame = ttk.Frame(self.main_frame)
+        canvas_frame.pack(fill="both", expand=True)
+
+        self.canvas = tk.Canvas(
+            canvas_frame, height=120, highlightthickness=0, bg="#3a3a3a", bd=0
+        )
+        scrollbar = ttk.Scrollbar(
+            canvas_frame, orient="vertical", command=self.canvas.yview
+        )
+
+        self.tags_frame = tk.Frame(self.canvas, bg="#3a3a3a")
+
+        self.canvas_window = self.canvas.create_window(
+            (0, 0), window=self.tags_frame, anchor="nw"
+        )
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Bind pour redimensionner le canvas window avec le canvas
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # Bind la molette pour scroll
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
+
+        self.tags_frame.bind("<Configure>", self._on_frame_configure)
+
+        self.update_display()
+
+    def _on_canvas_configure(self, event):
+        """Redimensionne le canvas window quand le canvas change de taille"""
+        canvas_width = event.width - 20
+        if canvas_width > 0:
+            self.canvas.itemconfig(self.canvas_window, width=canvas_width)
+
+    def _bind_scroll_to_widget(self, widget):
+        """Attache les événements de scroll à un widget"""
+        widget.bind("<MouseWheel>", self._on_mousewheel)
+        widget.bind("<Button-4>", self._on_mousewheel)
+        widget.bind("<Button-5>", self._on_mousewheel)
+        # Récursivement binder les enfants aussi
+        for child in widget.winfo_children():
+            self._bind_scroll_to_widget(child)
+
+    def _on_mousewheel(self, event):
+        """Gère le scroll à la molette - uniquement si le contenu dépasse"""
+        # Vérifier si le contenu dépasse la hauteur du canvas
+        scrollregion = self.canvas.cget("scrollregion")
+        if scrollregion:
+            # scrollregion est au format "x1 y1 x2 y2"
+            try:
+                parts = [int(x) for x in scrollregion.split()]
+                content_height = parts[3] - parts[1]
+                canvas_height = self.canvas.winfo_height()
+
+                # Bloquer le scroll si le contenu rentre entièrement
+                if content_height <= canvas_height:
+                    return "break"
+            except:
+                pass
+
+        # Faire le scroll si le contenu dépasse
+        if event.num == 5 or event.delta < 0:
+            self.canvas.yview_scroll(3, "units")
+        elif event.num == 4 or event.delta > 0:
+            self.canvas.yview_scroll(-3, "units")
+
+        return "break"
+
+    def _on_frame_configure(self, event=None):
+        """Rafraîchit la région scrollable"""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def pack(self, **kwargs):
+        """Émule pack pour le frame principal"""
+        self.main_frame.pack(**kwargs)
+
+    def grid(self, **kwargs):
+        """Émule grid pour le frame principal"""
+        self.main_frame.grid(**kwargs)
+
+    def add_tag_from_input(self):
+        """Ajoute le chemin depuis le champ de saisie"""
+        path = self.input_entry.get().strip()
+        if path and path not in self.paths:
+            self.paths.append(path)
+            self.input_entry.delete(0, tk.END)
+            self.update_display()
+
+    def remove_tag(self, path):
+        """Supprime un chemin de la liste"""
+        if path in self.paths:
+            self.paths.remove(path)
+            self.update_display()
+
+    def update_display(self):
+        """Rafraîchit l'affichage des blocs en liste verticale"""
+        for widget in self.tags_frame.winfo_children():
+            widget.destroy()
+
+        if self.paths:
+            for i, path in enumerate(self.paths):
+                tag_frame = tk.Frame(
+                    self.tags_frame,
+                    relief="solid",
+                    borderwidth=1,
+                    bg="#4a4a4a",
+                    height=35,
+                )
+                tag_frame.pack(fill="x", padx=2, pady=2)
+                tag_frame.pack_propagate(False)
+                tag_frame.columnconfigure(0, weight=1)
+
+                # Truncate long paths
+                display_text = path if len(path) <= 60 else path[:57] + "..."
+                path_label = tk.Label(
+                    tag_frame,
+                    text=display_text,
+                    bg="#4a4a4a",
+                    fg="#e0e0e0",
+                    padx=5,
+                    pady=3,
+                    anchor="w",
+                    justify="left",
+                    font=("Consolas", 9),
+                )
+                path_label.grid(row=0, column=0, sticky="ew", padx=(5, 0), pady=3)
+
+                remove_button = tk.Button(
+                    tag_frame,
+                    text="✕",
+                    width=3,
+                    bg="#d32f2f",
+                    fg="white",
+                    command=lambda p=path: self.remove_tag(p),
+                    relief="flat",
+                    padx=2,
+                    pady=2,
+                    font=("Segoe UI", 11, "bold"),
+                )
+                remove_button.grid(row=0, column=1, sticky="e", padx=5, pady=3)
+
+                # Bind scroll à tous les widgets de la ligne
+                self._bind_scroll_to_widget(tag_frame)
+        else:
+            empty_label = tk.Label(
+                self.tags_frame,
+                text="Aucun dossier sélectionné",
+                bg="#3a3a3a",
+                fg="#888888",
+                pady=20,
+            )
+            empty_label.pack(fill="x")
+            # Bind scroll aussi au label vide
+            self._bind_scroll_to_widget(empty_label)
+
+        # Update canvas scroll region
+        self.tags_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def get_paths(self):
+        """Retourne les chemins séparés par ;"""
+        return "; ".join(self.paths)
+
+    def set_paths(self, paths_str):
+        """Définit les chemins à partir d'une chaîne séparée par ;"""
+        self.paths = [p.strip() for p in paths_str.split(";") if p.strip()]
+        self.update_display()
+
+
 # Frame principal avec scrollbar
 main_frame = ttk.Frame(root)
-main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-# Canvas avec scrollbar pour la zone principale
-canvas_frame = ttk.Frame(main_frame)
-canvas_frame.pack(fill="both", expand=True)
-
-canvas = tk.Canvas(canvas_frame, highlightthickness=0)
-scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
-scrollable_frame = ttk.Frame(canvas)
-
-scrollable_frame.bind(
-    "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-)
-
-canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-canvas.configure(yscrollcommand=scrollbar.set)
+main_frame.pack(fill="both", expand=True, padx=12, pady=12)
+main_frame.rowconfigure(1, weight=1)
+main_frame.columnconfigure(0, weight=1)
 
 # Barre de boutons supérieure
-top_buttons_frame = ttk.Frame(scrollable_frame)
-top_buttons_frame.pack(fill="x", pady=(0, 10))
+top_buttons_frame = ttk.Frame(main_frame)
+top_buttons_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
 
 help_button = ttk.Button(
     top_buttons_frame, text="Help", command=open_help, style="Accent.TButton"
@@ -528,28 +830,77 @@ apropos_button = ttk.Button(
 )
 apropos_button.pack(side="left", padx=5)
 
-# Conteneur à deux colonnes
-columns_frame = ttk.Frame(scrollable_frame)
-columns_frame.pack(fill="both", expand=True)
+# ============ SECTION PROFILS ============
+profiles_frame = ttk.LabelFrame(main_frame, text="PROFILS", padding=10)
+profiles_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8), padx=0)
 
+profiles_list_label = ttk.Label(profiles_frame, text="Profils sauvegardés:")
+profiles_list_label.pack(anchor="w", pady=(0, 5))
+
+profile_listbox = tk.Listbox(
+    profiles_frame, height=3, font=("Consolas", 9), bg="#3a3a3a", fg="#e0e0e0"
+)
+profile_listbox.pack(fill="x", pady=5)
+
+profiles_buttons_frame = ttk.Frame(profiles_frame)
+profiles_buttons_frame.pack(fill="x", pady=5)
+
+load_profile_button = ttk.Button(
+    profiles_buttons_frame,
+    text="Load Profile",
+    command=load_selected_profile,
+    style="Accent.TButton",
+    width=10,
+)
+load_profile_button.pack(side="left", padx=3)
+
+save_profile_button = ttk.Button(
+    profiles_buttons_frame,
+    text="Save Profile",
+    command=save_profile_dialog,
+    style="Accent.TButton",
+    width=10,
+)
+save_profile_button.pack(side="left", padx=3)
+
+delete_profile_button = ttk.Button(
+    profiles_buttons_frame,
+    text="Delete Profile",
+    command=delete_selected_profile,
+    width=10,
+)
+delete_profile_button.pack(side="left", padx=3)
+
+# Charger les profils au démarrage
+refresh_profile_list()
+
+# Conteneur à deux colonnes
+columns_frame = ttk.Frame(main_frame)
+columns_frame.grid(row=1, column=0, sticky="nsew", pady=0, padx=0)
+columns_frame.rowconfigure(0, weight=1)
+columns_frame.rowconfigure(0, weight=1)
 columns_frame.columnconfigure(0, weight=1)
 columns_frame.columnconfigure(1, weight=1)
 
 # ============ PARTIE SAUVEGARDES (Colonne gauche) ============
-backup_frame = ttk.LabelFrame(columns_frame, text="BACKUPS", padding=15)
-backup_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+backup_frame = ttk.LabelFrame(columns_frame, text="BACKUPS", padding=12)
+backup_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+backup_frame.rowconfigure(7, weight=1)
+backup_frame.columnconfigure(0, weight=1)
+backup_frame.columnconfigure(1, weight=1)
 
 # Titre section
 backup_label = ttk.Label(
     backup_frame, text="Configuration des sauvegardes", style="Section.TLabel"
 )
-backup_label.pack(pady=(0, 10))
+backup_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
 # Dossiers source
-ttk.Label(backup_frame, text="Dossiers sources:").pack(anchor="w", pady=(10, 0))
-root_dirs_text = tk.Text(backup_frame, width=50, height=4, font=("Consolas", 10))
-root_dirs_text.pack(pady=(0, 5))
-configure_text_widget(root_dirs_text)
+ttk.Label(backup_frame, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
+    row=1, column=0, sticky="w", pady=(8, 3)
+)
+root_dirs_text = TagsWidget(backup_frame)
+root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 add_root_button = ttk.Button(
     backup_frame,
@@ -557,12 +908,15 @@ add_root_button = ttk.Button(
     command=add_root_folder,
     style="Accent.TButton",
 )
-add_root_button.pack(pady=5)
+add_root_button.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 # Destination
-ttk.Label(backup_frame, text="Dossier destination:").pack(anchor="w", pady=(10, 0))
+ttk.Label(backup_frame, text="Dossier destination:", font=("Segoe UI", 10)).grid(
+    row=4, column=0, sticky="w", pady=(8, 3)
+)
 dest_frame = ttk.Frame(backup_frame)
-dest_frame.pack(fill="x", pady=5)
+dest_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+dest_frame.columnconfigure(0, weight=1)
 
 dest_dir_entry = ttk.Entry(dest_frame)
 dest_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
@@ -578,25 +932,26 @@ browse_dest_button.pack(side="left")
 
 # Fréquence
 freq_frame = ttk.LabelFrame(backup_frame, text="Planification", padding=10)
-freq_frame.pack(fill="x", pady=10)
+freq_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+freq_frame.columnconfigure(1, weight=1)
 
 freq_row = ttk.Frame(freq_frame)
-freq_row.pack(fill="x", pady=5)
+freq_row.pack(fill="x", pady=4)
 
-ttk.Label(freq_row, text="Tous les").pack(side="left", padx=5)
+ttk.Label(freq_row, text="Tous les", font=("Segoe UI", 10)).pack(side="left", padx=5)
 frequency_entry = ttk.Entry(freq_row, width=5)
 frequency_entry.insert(0, "1")
 frequency_entry.pack(side="left", padx=5)
-ttk.Label(freq_row, text="jour(s)").pack(side="left", padx=5)
+ttk.Label(freq_row, text="jour(s)", font=("Segoe UI", 10)).pack(side="left", padx=5)
 
 hour_row = ttk.Frame(freq_frame)
-hour_row.pack(fill="x", pady=5)
+hour_row.pack(fill="x", pady=4)
 
-ttk.Label(hour_row, text="À").pack(side="left", padx=5)
+ttk.Label(hour_row, text="À", font=("Segoe UI", 10)).pack(side="left", padx=5)
 hour_entry = ttk.Entry(hour_row, width=5)
 hour_entry.insert(0, "2")
 hour_entry.pack(side="left", padx=5)
-ttk.Label(hour_row, text="heures").pack(side="left", padx=5)
+ttk.Label(hour_row, text="heures", font=("Segoe UI", 10)).pack(side="left", padx=5)
 
 # Barre de progression
 progress_var = tk.IntVar()
@@ -607,17 +962,20 @@ progress_bar = ttk.Progressbar(
     mode="determinate",
     variable=progress_var,
 )
-progress_bar.pack(pady=10, fill="x")
+progress_bar.grid(row=8, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 
 # Statut
 status_label = ttk.Label(
     backup_frame, text="", foreground="#2E7D32", font=("Segoe UI", 10)
 )
-status_label.pack(pady=5)
+status_label.grid(row=9, column=0, columnspan=2, sticky="ew", pady=5)
 
 # Boutons de contrôle
 button_frame = ttk.Frame(backup_frame)
-button_frame.pack(fill="x", pady=10)
+button_frame.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+button_frame.columnconfigure(0, weight=1)
+button_frame.columnconfigure(1, weight=1)
+button_frame.columnconfigure(2, weight=1)
 
 start_backup_button = ttk.Button(
     button_frame,
@@ -625,7 +983,7 @@ start_backup_button = ttk.Button(
     command=start_backup_schedule,
     style="Accent.TButton",
 )
-start_backup_button.pack(pady=5, fill="x")
+start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_backup_button = ttk.Button(
     button_frame,
@@ -633,7 +991,7 @@ stop_backup_button = ttk.Button(
     state="disabled",
     command=stop_backup_schedule,
 )
-stop_backup_button.pack(pady=5, fill="x")
+stop_backup_button.grid(row=0, column=1, sticky="ew", padx=3)
 
 manual_backup_button = ttk.Button(
     button_frame,
@@ -641,22 +999,28 @@ manual_backup_button = ttk.Button(
     command=manual_backup,
     style="Accent.TButton",
 )
-manual_backup_button.pack(pady=5, fill="x")
+manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # ============ PARTIE SUPPRESSION (Colonne droite) ============
-delete_frame = ttk.LabelFrame(columns_frame, text="AUTO DELETE", padding=15)
-delete_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+delete_frame = ttk.LabelFrame(columns_frame, text="AUTO DELETE", padding=12)
+delete_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+delete_frame.rowconfigure(7, weight=1)
+delete_frame.columnconfigure(0, weight=1)
+delete_frame.columnconfigure(1, weight=1)
 
 # Titre section
 delete_label = ttk.Label(
     delete_frame, text="Configuration de la suppression", style="Section.TLabel"
 )
-delete_label.pack(pady=(0, 10))
+delete_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
 # Dossier à surveiller
-ttk.Label(delete_frame, text="Dossier à surveiller:").pack(anchor="w", pady=(10, 0))
+ttk.Label(delete_frame, text="Dossier à surveiller:", font=("Segoe UI", 10)).grid(
+    row=1, column=0, sticky="w", pady=(8, 3)
+)
 dir_frame = ttk.Frame(delete_frame)
-dir_frame.pack(fill="x", pady=5)
+dir_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+dir_frame.columnconfigure(0, weight=1)
 
 directory_entry = ttk.Entry(dir_frame)
 directory_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
@@ -672,33 +1036,39 @@ browse_delete_button.pack(side="left")
 
 # Paramètres de suppression
 params_frame = ttk.LabelFrame(delete_frame, text="Paramètres", padding=10)
-params_frame.pack(fill="x", pady=10)
+params_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+params_frame.columnconfigure(1, weight=1)
 
-ttk.Label(params_frame, text="Garder les backups depuis:").pack(anchor="w", pady=(0, 5))
+ttk.Label(params_frame, text="Garder les backups depuis:", font=("Segoe UI", 10)).pack(
+    anchor="w", pady=(0, 5)
+)
 
 days_frame = ttk.Frame(params_frame)
-days_frame.pack(fill="x", pady=5)
+days_frame.pack(fill="x", pady=4)
 
 days_entry = ttk.Entry(days_frame, width=5)
 days_entry.insert(0, "30")
 days_entry.pack(side="left", padx=5)
 
-ttk.Label(days_frame, text="jour(s)").pack(side="left", padx=5)
+ttk.Label(days_frame, text="jour(s)", font=("Segoe UI", 10)).pack(side="left", padx=5)
 
 ttk.Label(
     params_frame,
     text="Schedule: Daily at 03:00",
     foreground="#999",
     font=("Segoe UI", 9),
-).pack(anchor="w", pady=(10, 0))
+).pack(anchor="w", pady=(8, 0))
 
 # Espace élastique
 espace = ttk.Frame(delete_frame)
-espace.pack(pady=30)
+espace.grid(row=4, column=0, columnspan=2, sticky="ew", pady=20)
 
 # Boutons de contrôle
 delete_button_frame = ttk.Frame(delete_frame)
-delete_button_frame.pack(fill="x", pady=10)
+delete_button_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+delete_button_frame.columnconfigure(0, weight=1)
+delete_button_frame.columnconfigure(1, weight=1)
+delete_button_frame.columnconfigure(2, weight=1)
 
 start_delete_button = ttk.Button(
     delete_button_frame,
@@ -706,7 +1076,7 @@ start_delete_button = ttk.Button(
     command=start_auto_delete_schedule,
     style="Accent.TButton",
 )
-start_delete_button.pack(pady=5, fill="x")
+start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_delete_button = ttk.Button(
     delete_button_frame,
@@ -714,7 +1084,7 @@ stop_delete_button = ttk.Button(
     command=stop_auto_delete_schedule,
     state="disabled",
 )
-stop_delete_button.pack(pady=5, fill="x")
+stop_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
 
 manual_delete_button = ttk.Button(
     delete_button_frame,
@@ -722,11 +1092,7 @@ manual_delete_button = ttk.Button(
     command=manual_delete,
     style="Accent.TButton",
 )
-manual_delete_button.pack(pady=5, fill="x")
-
-# Empaqueter canvas et scrollbar
-canvas.pack(side="left", fill="both", expand=True)
-scrollbar.pack(side="right", fill="y")
+manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # Démarrage interface
 root.mainloop()

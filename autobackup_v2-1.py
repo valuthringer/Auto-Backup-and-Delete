@@ -93,6 +93,7 @@ def load_profile_config(profile_name):
         delete_minute_entry.delete(0, tk.END)
         delete_minute_entry.insert(0, config.get("delete_minute", "0"))
         display_status(f"[OK] Profil '{profile_name}' chargé", "green")
+        update_backup_info_display()
 
 
 def delete_profile(profile_name):
@@ -239,21 +240,71 @@ def format_size(size_bytes):
 
 
 def update_backup_info_display():
-    """Met à jour l'affichage des informations de sauvegarde"""
+    """Met à jour les labels de taille, espace dispo et prévision (calcul en background)"""
     root_dirs = root_dirs_text.get_paths()
     dest_dir = dest_dir_entry.get()
 
     if root_dirs:
-        total_size = get_selected_dirs_total_size(root_dirs)
-        backup_size_label.config(text=f"Taille totale: {format_size(total_size)}")
+        backup_size_label.config(
+            text="Taille totale sources: calcul...", foreground="#888888"
+        )
     else:
-        backup_size_label.config(text="Taille totale: -")
+        backup_size_label.config(text="Taille totale sources: -", foreground="#2E7D32")
+        forecast_space_label.config(
+            text="Estimation espace après backup: -", foreground="#2E7D32"
+        )
 
-    if dest_dir and os.path.exists(dest_dir):
-        free_space = get_disk_free_space(dest_dir)
-        dest_space_label.config(text=f"Espace disponible: {format_size(free_space)}")
-    else:
-        dest_space_label.config(text="Espace disponible: -")
+    def _calculate():
+        total_size = 0
+        free_space = 0
+        if root_dirs:
+            total_size = get_selected_dirs_total_size(root_dirs)
+        if dest_dir and os.path.exists(dest_dir):
+            free_space = get_disk_free_space(dest_dir)
+
+        def _update_ui():
+            if root_dirs:
+                backup_size_label.config(
+                    text=f"Taille totale sources: {format_size(total_size)}",
+                    foreground="#2E7D32",
+                )
+            if dest_dir and os.path.exists(dest_dir):
+                dest_space_label.config(
+                    text=f"Espace disponible (destination): {format_size(free_space)}",
+                    foreground="#2E7D32",
+                )
+                if root_dirs and total_size > 0:
+                    remaining = free_space - total_size
+                    if remaining < 0:
+                        forecast_space_label.config(
+                            text=f"Estimation espace après backup: INSUFFISANT — manque {format_size(-remaining)}",
+                            foreground="#d32f2f",
+                        )
+                    elif free_space > 0 and remaining < free_space * 0.15:
+                        forecast_space_label.config(
+                            text=f"Estimation espace après backup: {format_size(remaining)} restants ⚠",
+                            foreground="#f57c00",
+                        )
+                    else:
+                        forecast_space_label.config(
+                            text=f"Estimation espace après backup: {format_size(remaining)} restants",
+                            foreground="#2E7D32",
+                        )
+                else:
+                    forecast_space_label.config(
+                        text="Estimation espace après backup: -", foreground="#2E7D32"
+                    )
+            else:
+                dest_space_label.config(
+                    text="Espace disponible (destination): -", foreground="#2E7D32"
+                )
+                forecast_space_label.config(
+                    text="Estimation espace après backup: -", foreground="#2E7D32"
+                )
+
+        root.after(0, _update_ui)
+
+    threading.Thread(target=_calculate, daemon=True).start()
 
 
 def update_next_backup_display():
@@ -461,6 +512,7 @@ def add_root_folder():
     if folder_selected and folder_selected not in root_dirs_text.paths:
         root_dirs_text.paths.append(folder_selected)
         root_dirs_text.update_display()
+        update_backup_info_display()
 
 
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
@@ -537,6 +589,7 @@ def browse_dest_folder():
     if folder_selected:
         dest_dir_entry.delete(0, tk.END)
         dest_dir_entry.insert(0, folder_selected)
+        update_backup_info_display()
 
 
 def browse_delete_folder():
@@ -743,6 +796,7 @@ class TagsWidget:
 
     def __init__(self, parent, **kwargs):
         self.paths = []
+        self.on_change = None
         self.main_frame = ttk.Frame(parent)
 
         # Frame pour l'input EN HAUT
@@ -850,12 +904,16 @@ class TagsWidget:
             self.paths.append(path)
             self.input_entry.delete(0, tk.END)
             self.update_display()
+            if self.on_change:
+                self.on_change()
 
     def remove_tag(self, path):
         """Supprime un chemin de la liste"""
         if path in self.paths:
             self.paths.remove(path)
             self.update_display()
+            if self.on_change:
+                self.on_change()
 
     def update_display(self):
         """Rafraîchit l'affichage des blocs en liste verticale"""
@@ -996,6 +1054,7 @@ delete_profile_button.pack(side="left", padx=3)
 # Charger les profils au démarrage
 refresh_profile_list()
 
+
 # Helper pour créer une zone scrollable avec scroll vertical auto-masqué
 def _make_scrollable_area(parent):
     """Retourne (container, inner_frame, canvas) — scrollbar affichée seulement si contenu dépasse"""
@@ -1048,22 +1107,33 @@ button_frame.columnconfigure(1, weight=1)
 button_frame.columnconfigure(2, weight=1)
 
 start_backup_button = ttk.Button(
-    button_frame, text="Start Backup", command=start_backup_schedule, style="Accent.TButton",
+    button_frame,
+    text="Start Backup",
+    command=start_backup_schedule,
+    style="Accent.TButton",
 )
 start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_backup_button = ttk.Button(
-    button_frame, text="Stop Backup", state="disabled", command=stop_backup_schedule,
+    button_frame,
+    text="Stop Backup",
+    state="disabled",
+    command=stop_backup_schedule,
 )
 stop_backup_button.grid(row=0, column=1, sticky="ew", padx=3)
 
 manual_backup_button = ttk.Button(
-    button_frame, text="Manual Backup", command=manual_backup, style="Accent.TButton",
+    button_frame,
+    text="Manual Backup",
+    command=manual_backup,
+    style="Accent.TButton",
 )
 manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # Zone scrollable (prend tout l'espace restant au-dessus des boutons)
-backup_scroll_container, backup_inner, backup_canvas = _make_scrollable_area(backup_frame)
+backup_scroll_container, backup_inner, backup_canvas = _make_scrollable_area(
+    backup_frame
+)
 backup_scroll_container.pack(side="top", fill="both", expand=True)
 backup_inner.columnconfigure(0, weight=1)
 backup_inner.columnconfigure(1, weight=1)
@@ -1080,9 +1150,13 @@ ttk.Label(backup_inner, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
 )
 root_dirs_text = TagsWidget(backup_inner)
 root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+root_dirs_text.on_change = update_backup_info_display
 
 add_root_button = ttk.Button(
-    backup_inner, text="+ Add Source Folder", command=add_root_folder, style="Accent.TButton",
+    backup_inner,
+    text="+ Add Source Folder",
+    command=add_root_folder,
+    style="Accent.TButton",
 )
 add_root_button.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
@@ -1098,7 +1172,11 @@ dest_dir_entry = ttk.Entry(dest_frame)
 dest_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 browse_dest_button = ttk.Button(
-    dest_frame, text="Browse", command=browse_dest_folder, width=12, style="Accent.TButton",
+    dest_frame,
+    text="Browse",
+    command=browse_dest_folder,
+    width=12,
+    style="Accent.TButton",
 )
 browse_dest_button.pack(side="left")
 
@@ -1132,7 +1210,11 @@ ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 # Barre de progression
 progress_var = tk.IntVar()
 progress_bar = ttk.Progressbar(
-    backup_inner, orient="horizontal", length=400, mode="determinate", variable=progress_var,
+    backup_inner,
+    orient="horizontal",
+    length=400,
+    mode="determinate",
+    variable=progress_var,
 )
 progress_bar.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 
@@ -1146,9 +1228,31 @@ backup_size_label = ttk.Label(
 backup_size_label.pack(anchor="w", pady=2)
 
 dest_space_label = ttk.Label(
-    info_frame, text="Espace disponible: -", foreground="#2E7D32", font=("Segoe UI", 9),
+    info_frame,
+    text="Espace disponible (destination): -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
 )
 dest_space_label.pack(anchor="w", pady=2)
+
+forecast_row = ttk.Frame(info_frame)
+forecast_row.pack(anchor="w", fill="x", pady=2)
+
+forecast_space_label = ttk.Label(
+    forecast_row,
+    text="Estimation espace après backup: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9, "bold"),
+)
+forecast_space_label.pack(side="left")
+
+refresh_info_button = ttk.Button(
+    forecast_row,
+    text="Refresh",
+    command=update_backup_info_display,
+    width=9,
+)
+refresh_info_button.pack(side="right", padx=(8, 0))
 
 next_backup_label = ttk.Label(
     info_frame, text="Prochaine backup: -", foreground="#2E7D32", font=("Segoe UI", 9)
@@ -1174,22 +1278,33 @@ delete_button_frame.columnconfigure(1, weight=1)
 delete_button_frame.columnconfigure(2, weight=1)
 
 start_delete_button = ttk.Button(
-    delete_button_frame, text="Start Delete", command=start_auto_delete_schedule, style="Accent.TButton",
+    delete_button_frame,
+    text="Start Delete",
+    command=start_auto_delete_schedule,
+    style="Accent.TButton",
 )
 start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
 stop_delete_button = ttk.Button(
-    delete_button_frame, text="Stop Delete", command=stop_auto_delete_schedule, state="disabled",
+    delete_button_frame,
+    text="Stop Delete",
+    command=stop_auto_delete_schedule,
+    state="disabled",
 )
 stop_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
 
 manual_delete_button = ttk.Button(
-    delete_button_frame, text="Manual Delete", command=manual_delete, style="Accent.TButton",
+    delete_button_frame,
+    text="Manual Delete",
+    command=manual_delete,
+    style="Accent.TButton",
 )
 manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # Zone scrollable
-delete_scroll_container, delete_inner, delete_canvas = _make_scrollable_area(delete_frame)
+delete_scroll_container, delete_inner, delete_canvas = _make_scrollable_area(
+    delete_frame
+)
 delete_scroll_container.pack(side="top", fill="both", expand=True)
 delete_inner.columnconfigure(0, weight=1)
 delete_inner.columnconfigure(1, weight=1)
@@ -1212,7 +1327,11 @@ directory_entry = ttk.Entry(dir_frame)
 directory_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 browse_delete_button = ttk.Button(
-    dir_frame, text="Browse", command=browse_delete_folder, width=12, style="Accent.TButton",
+    dir_frame,
+    text="Browse",
+    command=browse_delete_folder,
+    width=12,
+    style="Accent.TButton",
 )
 browse_delete_button.pack(side="left")
 

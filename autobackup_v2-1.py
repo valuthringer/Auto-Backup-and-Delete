@@ -947,6 +947,17 @@ style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"))
 style.configure("Thick.Horizontal.TProgressbar", thickness=28)
 
 
+def _make_time_vcmd(max_val):
+    def validate(new_value):
+        if new_value == "":
+            return True
+        try:
+            return 0 <= int(new_value) <= max_val
+        except ValueError:
+            return False
+    return root.register(validate), "%P"
+
+
 # Configurer les zones de texte après création
 def configure_text_widget(widget):
     """Configure un widget Text avec les couleurs Forest"""
@@ -1404,11 +1415,13 @@ time_row = ttk.Frame(freq_frame)
 time_row.pack(fill="x", pady=4)
 
 ttk.Label(time_row, text="At", font=("Segoe UI", 10)).pack(side="left", padx=5)
-hour_entry = ttk.Entry(time_row, width=3)
+hour_entry = ttk.Spinbox(time_row, width=4, from_=0, to=23, validate="key", validatecommand=_make_time_vcmd(23))
+hour_entry.delete(0, tk.END)
 hour_entry.insert(0, "2")
 hour_entry.pack(side="left", padx=2)
 ttk.Label(time_row, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
-minute_entry = ttk.Entry(time_row, width=3)
+minute_entry = ttk.Spinbox(time_row, width=4, from_=0, to=59, validate="key", validatecommand=_make_time_vcmd(59))
+minute_entry.delete(0, tk.END)
 minute_entry.insert(0, "0")
 minute_entry.pack(side="left", padx=2)
 ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
@@ -1575,11 +1588,13 @@ schedule_frame = ttk.Frame(params_frame)
 schedule_frame.pack(fill="x", pady=4)
 
 ttk.Label(schedule_frame, text="At", font=("Segoe UI", 10)).pack(side="left", padx=5)
-delete_hour_entry = ttk.Entry(schedule_frame, width=3)
+delete_hour_entry = ttk.Spinbox(schedule_frame, width=4, from_=0, to=23, validate="key", validatecommand=_make_time_vcmd(23))
+delete_hour_entry.delete(0, tk.END)
 delete_hour_entry.insert(0, "3")
 delete_hour_entry.pack(side="left", padx=2)
 ttk.Label(schedule_frame, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
-delete_minute_entry = ttk.Entry(schedule_frame, width=3)
+delete_minute_entry = ttk.Spinbox(schedule_frame, width=4, from_=0, to=59, validate="key", validatecommand=_make_time_vcmd(59))
+delete_minute_entry.delete(0, tk.END)
 delete_minute_entry.insert(0, "0")
 delete_minute_entry.pack(side="left", padx=2)
 ttk.Label(schedule_frame, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)

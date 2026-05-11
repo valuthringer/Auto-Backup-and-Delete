@@ -2,7 +2,7 @@
 
 # Auto Backup & Delete
 
-**Sauvegardez vos dossiers automatiquement. Supprimez les vieilles archives sans effort.**
+**Automatically back up your folders. Delete old archives effortlessly.**
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Tkinter](https://img.shields.io/badge/GUI-Tkinter%20%2B%20Forest--ttk-2E7D32?style=flat-square)](https://docs.python.org/3/library/tkinter.html)
@@ -10,61 +10,61 @@
 [![Version](https://img.shields.io/badge/Version-3.1-orange?style=flat-square)](https://valuthringer.github.io)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
-*Application desktop Python avec interface graphique — thème Forest Dark*
+*Python desktop application with a graphical interface — Forest Dark theme*
 
 </div>
 
 ---
 
-## Apercu
+## Overview
 
-**Auto Backup & Delete** est un outil de sauvegarde et de nettoyage automatique de fichiers. Il permet de compresser vos dossiers importants en `.zip` horodatés, de les envoyer vers un ou plusieurs emplacements de destination, et de supprimer automatiquement les archives trop anciennes — le tout via une interface graphique minimaliste.
+**Auto Backup & Delete** is a tool for automatic file backup and cleanup. It compresses your important folders into timestamped `.zip` archives, sends them to one or more destination folders, and automatically deletes archives that are too old — all through a minimalist graphical interface.
 
 ---
 
-## Fonctionnalités
+## Features
 
-### Sauvegarde
-- **Sauvegarde manuelle** — lancez une sauvegarde immédiate en un clic
-- **Sauvegarde automatique planifiée** — configurez une fréquence (tous les N jours) et une heure précise
-- **Multi-sources** — ajoutez plusieurs dossiers sources dans une même archive
-- **Multi-destinations** — sauvegardez simultanément vers plusieurs emplacements (disque local, NAS, clé USB...)
-- **Format de nommage** : `Backup_DD-MM-YYYY_N.zip` avec incrémentation automatique
-- **Barre de progression** en temps réel
+### Backup
+- **Manual backup** — trigger an immediate backup with a single click
+- **Scheduled automatic backup** — set a frequency (every N days) and a precise time
+- **Multi-source** — add multiple source folders into a single archive
+- **Multi-destination** — back up simultaneously to multiple locations (local drive, NAS, USB...)
+- **Naming format**: `Backup_DD-MM-YYYY_N.zip` with automatic incrementing
+- **Real-time progress bar**
 
-### Suppression automatique
-- **Suppression planifiée** des archives `.zip` plus anciennes que N jours, tous les jours à l'heure configurée
-- **Suppression manuelle** à la demande
-- **Force Purge** — suppression totale des dossiers surveillés (double confirmation requise)
-- **Simulation en temps réel** : taille à supprimer, nombre de fichiers éligibles, taille estimée après nettoyage
+### Automatic Deletion
+- **Scheduled deletion** of `.zip` files older than N days, every day at the configured time
+- **Manual deletion** on demand
+- **Force Purge** — wipe all monitored folders entirely (double confirmation required)
+- **Real-time simulation**: size to delete, number of eligible files, estimated size after cleanup
 
-### Informations disque (temps réel)
-- Taille totale des dossiers sources
-- Espace disponible sur la destination
-- Estimation de l'espace restant après sauvegarde (avec alerte si insuffisant)
-- Prochaine sauvegarde programmée
+### Disk Information (real-time)
+- Total size of source folders
+- Available space at the destination
+- Estimated remaining space after backup (with warning if insufficient)
+- Next scheduled backup time
 
-### Profils de configuration
-- Sauvegardez et rechargez des configurations complètes (sources, destinations, planning, paramètres de suppression)
-- **Auto-save** du profil actif toutes les 5 minutes
-- Profils stockés dans `%APPDATA%\Auto-Backup-and-Delete\profiles.json`
+### Configuration Profiles
+- Save and reload complete configurations (sources, destinations, schedule, deletion settings)
+- **Auto-save** of the active profile every 5 minutes
+- Profiles stored in `%APPDATA%\Auto-Backup-and-Delete\profiles.json`
 
 ---
 
 ## Interface
 
-![Apercu de l'interface](view.png)
+![Interface preview](view.png)
 
 ---
 
 ## Installation
 
-### Prérequis
+### Requirements
 
-- Python 3.8 ou supérieur
+- Python 3.8 or higher
 - pip
 
-### Depuis les sources
+### From source
 
 ```bash
 git clone https://github.com/valuthringer/Auto-Backup-and-Delete.git
@@ -73,11 +73,11 @@ pip install schedule
 python autobackup.py
 ```
 
-### Depuis l'executable (.exe)
+### From the executable (.exe)
 
-Téléchargez le dernier `.exe` depuis les [Releases](https://github.com/valuthringer/Auto-Backup-and-Delete/releases) et lancez-le directement — aucune installation Python requise.
+Download the latest `.exe` from the [Releases](https://github.com/valuthringer/Auto-Backup-and-Delete/releases) page and run it directly — no Python installation required.
 
-Pour recompiler l'executable vous-meme :
+To recompile the executable yourself:
 
 ```bash
 pip install pyinstaller
@@ -86,59 +86,59 @@ pyinstaller autobackup.spec
 
 ---
 
-## Guide d'utilisation
+## Usage Guide
 
-### Sauvegarde
+### Backup
 
-1. Cliquez sur **+ Add Source Folder** pour ajouter les dossiers a sauvegarder
-2. Cliquez sur **+ Add Destination Folder** pour choisir la ou les destinations
-3. Configurez la frequence (tous les N jours) et l'heure dans la section **Schedule**
-4. Activez **Enable Auto-Backup** pour les sauvegardes automatiques, ou cliquez **Manual Backup** pour une sauvegarde immediate
+1. Click **+ Add Source Folder** to add the folders you want to back up
+2. Click **+ Add Destination Folder** to choose one or more destinations
+3. Set the frequency (every N days) and time in the **Schedule** section
+4. Toggle **Enable Auto-Backup** for scheduled backups, or click **Manual Backup** for an immediate backup
 
-> Les sauvegardes sont des fichiers `.zip` nommes `Backup_DD-MM-YYYY_N.zip`.  
-> Si plusieurs destinations sont configurees, le fichier est copie dans chacune simultanement.
+> Backups are `.zip` files named `Backup_DD-MM-YYYY_N.zip`.  
+> If multiple destinations are configured, the file is copied to each one simultaneously.
 
-### Suppression
+### Deletion
 
-1. Cliquez sur **+ Add Deletion Folder** pour surveiller un ou plusieurs dossiers
-2. Definissez le nombre de jours de retention dans **Keep backups since**
-3. Configurez l'heure de nettoyage quotidien dans **Daily schedule**
-4. Activez **Enable Auto-Delete** ou cliquez **Manual Delete** pour lancer le nettoyage
+1. Click **+ Add Deletion Folder** to monitor one or more folders
+2. Set the retention period in **Keep backups since**
+3. Set the daily cleanup time in **Daily schedule**
+4. Toggle **Enable Auto-Delete** or click **Manual Delete** to run the cleanup
 
-> Seuls les fichiers `.zip` sont supprimes lors des suppressions planifiees/manuelles.  
-> **Force Purge All** supprime l'ensemble du contenu des dossiers surveilles (double confirmation).
+> Only `.zip` files are targeted by scheduled/manual deletion.  
+> **Force Purge All** deletes all content in the monitored folders (double confirmation required).
 
-### Profils
+### Profiles
 
 | Action | Description |
 |---|---|
-| **New Profile** | Remet tous les champs a zero |
-| **Save Profile As** | Sauvegarde la configuration sous un nouveau nom |
-| **Save Profile** | Met a jour le profil actif |
-| **Load Profile** | Charge le profil selectionne dans la liste |
-| **Delete Profile** | Supprime definitivement le profil selectionne |
+| **New Profile** | Resets all fields to start fresh |
+| **Save Profile As** | Saves the current configuration under a new name |
+| **Save Profile** | Updates the currently active profile |
+| **Load Profile** | Applies the selected profile from the list |
+| **Delete Profile** | Permanently removes the selected profile |
 
-Le profil actif est **auto-sauvegarde toutes les 5 minutes** en arriere-plan.
+The active profile is **auto-saved every 5 minutes** in the background.
 
 ---
 
-## Stack technique
+## Tech Stack
 
-| Composant | Detail |
+| Component | Detail |
 |---|---|
-| Langage | Python 3.8+ |
-| Interface graphique | Tkinter + ttk |
-| Theme UI | [Forest-ttk-theme](https://github.com/rdbende/Forest-ttk-theme) (dark) |
+| Language | Python 3.8+ |
+| GUI | Tkinter + ttk |
+| UI Theme | [Forest-ttk-theme](https://github.com/rdbende/Forest-ttk-theme) (dark) |
 | Compression | `zipfile` (ZIP_DEFLATED) |
-| Planification | `schedule` |
-| Threading | `threading` (operations non-bloquantes) |
-| Persistance | JSON (`%APPDATA%\Auto-Backup-and-Delete\profiles.json`) |
+| Scheduling | `schedule` |
+| Threading | `threading` (non-blocking operations) |
+| Persistence | JSON (`%APPDATA%\Auto-Backup-and-Delete\profiles.json`) |
 | Build | PyInstaller |
 
 ---
 
-## Auteur
+## Author
 
-Developpe par **Valentin Luthringer** — [@valuthringer](https://valuthringer.github.io)
+Developed by **Valentin Luthringer** — [@valuthringer](https://valuthringer.github.io)
 
-Version **3.1** — Mai 2026
+Version **3.1** — May 2026

@@ -706,7 +706,7 @@ def open_a_propos():
 root = tk.Tk()
 root.title("Auto Backup & Delete by @valuthringer")
 root.geometry("1000x800")
-root.minsize(1000, 800)
+root.minsize(700, 500)
 
 # Charger le thème
 load_forest_theme()
@@ -996,10 +996,42 @@ delete_profile_button.pack(side="left", padx=3)
 # Charger les profils au démarrage
 refresh_profile_list()
 
+# Helper pour créer une zone scrollable avec scroll vertical auto-masqué
+def _make_scrollable_area(parent):
+    """Retourne (container, inner_frame, canvas) — scrollbar affichée seulement si contenu dépasse"""
+    try:
+        bg = ttk.Style().lookup("TFrame", "background") or "#313131"
+    except Exception:
+        bg = "#313131"
+    container = ttk.Frame(parent)
+    canvas = tk.Canvas(container, highlightthickness=0, bd=0, bg=bg)
+    vscroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vscroll.set)
+    inner = ttk.Frame(canvas)
+    win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def _check_scroll(_=None):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        if inner.winfo_reqheight() > canvas.winfo_height() + 2:
+            if not vscroll.winfo_ismapped():
+                vscroll.pack(side="right", fill="y")
+        else:
+            if vscroll.winfo_ismapped():
+                vscroll.pack_forget()
+
+    def _on_resize(event):
+        canvas.itemconfig(win_id, width=event.width)
+        _check_scroll()
+
+    canvas.bind("<Configure>", _on_resize)
+    inner.bind("<Configure>", _check_scroll)
+    canvas.pack(side="left", fill="both", expand=True)
+    return container, inner, canvas
+
+
 # Conteneur à deux colonnes
 columns_frame = ttk.Frame(main_frame)
 columns_frame.grid(row=1, column=0, sticky="nsew", pady=0, padx=0)
-columns_frame.rowconfigure(0, weight=1)
 columns_frame.rowconfigure(0, weight=1)
 columns_frame.columnconfigure(0, weight=1)
 columns_frame.columnconfigure(1, weight=1)
@@ -1007,36 +1039,58 @@ columns_frame.columnconfigure(1, weight=1)
 # ============ PARTIE SAUVEGARDES (Colonne gauche) ============
 backup_frame = ttk.LabelFrame(columns_frame, text="BACKUPS", padding=12)
 backup_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-backup_frame.rowconfigure(7, weight=1)
-backup_frame.columnconfigure(0, weight=1)
-backup_frame.columnconfigure(1, weight=1)
+
+# Boutons ÉPINGLÉS en bas — packés en premier pour réserver l'espace
+button_frame = ttk.Frame(backup_frame)
+button_frame.pack(side="bottom", fill="x", pady=(8, 0))
+button_frame.columnconfigure(0, weight=1)
+button_frame.columnconfigure(1, weight=1)
+button_frame.columnconfigure(2, weight=1)
+
+start_backup_button = ttk.Button(
+    button_frame, text="Start Backup", command=start_backup_schedule, style="Accent.TButton",
+)
+start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+
+stop_backup_button = ttk.Button(
+    button_frame, text="Stop Backup", state="disabled", command=stop_backup_schedule,
+)
+stop_backup_button.grid(row=0, column=1, sticky="ew", padx=3)
+
+manual_backup_button = ttk.Button(
+    button_frame, text="Manual Backup", command=manual_backup, style="Accent.TButton",
+)
+manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+
+# Zone scrollable (prend tout l'espace restant au-dessus des boutons)
+backup_scroll_container, backup_inner, backup_canvas = _make_scrollable_area(backup_frame)
+backup_scroll_container.pack(side="top", fill="both", expand=True)
+backup_inner.columnconfigure(0, weight=1)
+backup_inner.columnconfigure(1, weight=1)
 
 # Titre section
 backup_label = ttk.Label(
-    backup_frame, text="Configuration des sauvegardes", style="Section.TLabel"
+    backup_inner, text="Configuration des sauvegardes", style="Section.TLabel"
 )
 backup_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
 # Dossiers source
-ttk.Label(backup_frame, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
+ttk.Label(backup_inner, text="Dossiers sources:", font=("Segoe UI", 10)).grid(
     row=1, column=0, sticky="w", pady=(8, 3)
 )
-root_dirs_text = TagsWidget(backup_frame)
+root_dirs_text = TagsWidget(backup_inner)
 root_dirs_text.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 add_root_button = ttk.Button(
-    backup_frame,
-    text="+ Add Source Folder",
-    command=add_root_folder,
-    style="Accent.TButton",
+    backup_inner, text="+ Add Source Folder", command=add_root_folder, style="Accent.TButton",
 )
 add_root_button.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
 # Destination
-ttk.Label(backup_frame, text="Dossier destination:", font=("Segoe UI", 10)).grid(
+ttk.Label(backup_inner, text="Dossier destination:", font=("Segoe UI", 10)).grid(
     row=4, column=0, sticky="w", pady=(8, 3)
 )
-dest_frame = ttk.Frame(backup_frame)
+dest_frame = ttk.Frame(backup_inner)
 dest_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 dest_frame.columnconfigure(0, weight=1)
 
@@ -1044,16 +1098,12 @@ dest_dir_entry = ttk.Entry(dest_frame)
 dest_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 browse_dest_button = ttk.Button(
-    dest_frame,
-    text="Browse",
-    command=browse_dest_folder,
-    width=12,
-    style="Accent.TButton",
+    dest_frame, text="Browse", command=browse_dest_folder, width=12, style="Accent.TButton",
 )
 browse_dest_button.pack(side="left")
 
 # Fréquence
-freq_frame = ttk.LabelFrame(backup_frame, text="Planification", padding=10)
+freq_frame = ttk.LabelFrame(backup_inner, text="Planification", padding=10)
 freq_frame.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 freq_frame.columnconfigure(1, weight=1)
 
@@ -1082,16 +1132,12 @@ ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 # Barre de progression
 progress_var = tk.IntVar()
 progress_bar = ttk.Progressbar(
-    backup_frame,
-    orient="horizontal",
-    length=400,
-    mode="determinate",
-    variable=progress_var,
+    backup_inner, orient="horizontal", length=400, mode="determinate", variable=progress_var,
 )
 progress_bar.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
 
-# Info labels frame
-info_frame = ttk.Frame(backup_frame)
+# Info labels
+info_frame = ttk.Frame(backup_inner)
 info_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
 
 backup_size_label = ttk.Label(
@@ -1100,10 +1146,7 @@ backup_size_label = ttk.Label(
 backup_size_label.pack(anchor="w", pady=2)
 
 dest_space_label = ttk.Label(
-    info_frame,
-    text="Espace disponible: -",
-    foreground="#2E7D32",
-    font=("Segoe UI", 9),
+    info_frame, text="Espace disponible: -", foreground="#2E7D32", font=("Segoe UI", 9),
 )
 dest_space_label.pack(anchor="w", pady=2)
 
@@ -1114,59 +1157,54 @@ next_backup_label.pack(anchor="w", pady=2)
 
 # Statut
 status_label = ttk.Label(
-    backup_frame, text="", foreground="#2E7D32", font=("Segoe UI", 10)
+    backup_inner, text="", foreground="#2E7D32", font=("Segoe UI", 10)
 )
 status_label.grid(row=9, column=0, columnspan=2, sticky="ew", pady=5)
 
-# Boutons de contrôle
-button_frame = ttk.Frame(backup_frame)
-button_frame.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-button_frame.columnconfigure(0, weight=1)
-button_frame.columnconfigure(1, weight=1)
-button_frame.columnconfigure(2, weight=1)
-
-start_backup_button = ttk.Button(
-    button_frame,
-    text="Start Backup",
-    command=start_backup_schedule,
-    style="Accent.TButton",
-)
-start_backup_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
-
-stop_backup_button = ttk.Button(
-    button_frame,
-    text="Stop Backup",
-    state="disabled",
-    command=stop_backup_schedule,
-)
-stop_backup_button.grid(row=0, column=1, sticky="ew", padx=3)
-
-manual_backup_button = ttk.Button(
-    button_frame,
-    text="Manual Backup",
-    command=manual_backup,
-    style="Accent.TButton",
-)
-manual_backup_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
 
 # ============ PARTIE SUPPRESSION (Colonne droite) ============
 delete_frame = ttk.LabelFrame(columns_frame, text="AUTO DELETE", padding=12)
 delete_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-delete_frame.rowconfigure(7, weight=1)
-delete_frame.columnconfigure(0, weight=1)
-delete_frame.columnconfigure(1, weight=1)
+
+# Boutons ÉPINGLÉS en bas — packés en premier
+delete_button_frame = ttk.Frame(delete_frame)
+delete_button_frame.pack(side="bottom", fill="x", pady=(8, 0))
+delete_button_frame.columnconfigure(0, weight=1)
+delete_button_frame.columnconfigure(1, weight=1)
+delete_button_frame.columnconfigure(2, weight=1)
+
+start_delete_button = ttk.Button(
+    delete_button_frame, text="Start Delete", command=start_auto_delete_schedule, style="Accent.TButton",
+)
+start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+
+stop_delete_button = ttk.Button(
+    delete_button_frame, text="Stop Delete", command=stop_auto_delete_schedule, state="disabled",
+)
+stop_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
+
+manual_delete_button = ttk.Button(
+    delete_button_frame, text="Manual Delete", command=manual_delete, style="Accent.TButton",
+)
+manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+
+# Zone scrollable
+delete_scroll_container, delete_inner, delete_canvas = _make_scrollable_area(delete_frame)
+delete_scroll_container.pack(side="top", fill="both", expand=True)
+delete_inner.columnconfigure(0, weight=1)
+delete_inner.columnconfigure(1, weight=1)
 
 # Titre section
 delete_label = ttk.Label(
-    delete_frame, text="Configuration de la suppression", style="Section.TLabel"
+    delete_inner, text="Configuration de la suppression", style="Section.TLabel"
 )
 delete_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
 # Dossier à surveiller
-ttk.Label(delete_frame, text="Dossier à surveiller:", font=("Segoe UI", 10)).grid(
+ttk.Label(delete_inner, text="Dossier à surveiller:", font=("Segoe UI", 10)).grid(
     row=1, column=0, sticky="w", pady=(8, 3)
 )
-dir_frame = ttk.Frame(delete_frame)
+dir_frame = ttk.Frame(delete_inner)
 dir_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 dir_frame.columnconfigure(0, weight=1)
 
@@ -1174,16 +1212,12 @@ directory_entry = ttk.Entry(dir_frame)
 directory_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 browse_delete_button = ttk.Button(
-    dir_frame,
-    text="Browse",
-    command=browse_delete_folder,
-    width=12,
-    style="Accent.TButton",
+    dir_frame, text="Browse", command=browse_delete_folder, width=12, style="Accent.TButton",
 )
 browse_delete_button.pack(side="left")
 
 # Paramètres de suppression
-params_frame = ttk.LabelFrame(delete_frame, text="Paramètres", padding=10)
+params_frame = ttk.LabelFrame(delete_inner, text="Paramètres", padding=10)
 params_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 params_frame.columnconfigure(1, weight=1)
 
@@ -1218,46 +1252,60 @@ delete_minute_entry.insert(0, "0")
 delete_minute_entry.pack(side="left", padx=2)
 ttk.Label(schedule_frame, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
-# Espace élastique
-espace = ttk.Frame(delete_frame)
-espace.grid(row=4, column=0, columnspan=2, sticky="ew", pady=20)
-
 # Info labels
+espace = ttk.Frame(delete_inner)
+espace.grid(row=4, column=0, columnspan=2, sticky="ew", pady=8)
+
 delete_backup_folder_label = ttk.Label(
     espace, text="Dossier de backup: -", foreground="#2E7D32", font=("Segoe UI", 9)
 )
 delete_backup_folder_label.pack(anchor="w", pady=5)
 
-# Boutons de contrôle
-delete_button_frame = ttk.Frame(delete_frame)
-delete_button_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-delete_button_frame.columnconfigure(0, weight=1)
-delete_button_frame.columnconfigure(1, weight=1)
-delete_button_frame.columnconfigure(2, weight=1)
 
-start_delete_button = ttk.Button(
-    delete_button_frame,
-    text="Start Delete",
-    command=start_auto_delete_schedule,
-    style="Accent.TButton",
-)
-start_delete_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+# Routage molette → bon canvas selon la zone survolée
+def _setup_scroll_routing():
+    scroll_areas = [
+        (backup_scroll_container, backup_canvas, backup_scroll_container),
+        (delete_scroll_container, delete_canvas, delete_scroll_container),
+    ]
 
-stop_delete_button = ttk.Button(
-    delete_button_frame,
-    text="Stop Delete",
-    command=stop_auto_delete_schedule,
-    state="disabled",
-)
-stop_delete_button.grid(row=0, column=1, sticky="ew", padx=3)
+    # Map canvas → its scrollbar widget for visibility check
+    canvas_to_scrollbar = {}
+    for container, canvas, _ in scroll_areas:
+        for child in container.winfo_children():
+            if isinstance(child, ttk.Scrollbar):
+                canvas_to_scrollbar[canvas] = child
+                break
 
-manual_delete_button = ttk.Button(
-    delete_button_frame,
-    text="Manual Delete",
-    command=manual_delete,
-    style="Accent.TButton",
-)
-manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+    def _find_canvas(widget):
+        current = widget
+        while current is not None:
+            for container, canvas, _ in scroll_areas:
+                if current is container:
+                    return canvas
+            try:
+                current = current.master
+            except AttributeError:
+                break
+        return None
+
+    def _on_scroll(event):
+        canvas = _find_canvas(event.widget)
+        if canvas:
+            vscroll = canvas_to_scrollbar.get(canvas)
+            if vscroll and not vscroll.winfo_ismapped():
+                return
+            if event.num == 5 or event.delta < 0:
+                canvas.yview_scroll(3, "units")
+            elif event.num == 4 or event.delta > 0:
+                canvas.yview_scroll(-3, "units")
+
+    root.bind_all("<MouseWheel>", _on_scroll, add="+")
+    root.bind_all("<Button-4>", _on_scroll, add="+")
+    root.bind_all("<Button-5>", _on_scroll, add="+")
+
+
+root.after(100, _setup_scroll_routing)
 
 # Event bindings to update info displays
 root_dirs_text.input_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())

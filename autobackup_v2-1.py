@@ -59,8 +59,11 @@ def save_current_config_as_profile(profile_name):
         "dest_dir": dest_dir_entry.get(),
         "frequency_days": frequency_entry.get(),
         "hour": hour_entry.get(),
+        "minute": minute_entry.get(),
         "directory": directory_entry.get(),
         "days": days_entry.get(),
+        "delete_hour": delete_hour_entry.get(),
+        "delete_minute": delete_minute_entry.get(),
     }
     save_profiles_dict(profiles)
     display_status(f"[OK] Profil '{profile_name}' sauvegardé", "green")
@@ -79,10 +82,16 @@ def load_profile_config(profile_name):
         frequency_entry.insert(0, config.get("frequency_days", "1"))
         hour_entry.delete(0, tk.END)
         hour_entry.insert(0, config.get("hour", "2"))
+        minute_entry.delete(0, tk.END)
+        minute_entry.insert(0, config.get("minute", "0"))
         directory_entry.delete(0, tk.END)
         directory_entry.insert(0, config.get("directory", ""))
         days_entry.delete(0, tk.END)
         days_entry.insert(0, config.get("days", "30"))
+        delete_hour_entry.delete(0, tk.END)
+        delete_hour_entry.insert(0, config.get("delete_hour", "3"))
+        delete_minute_entry.delete(0, tk.END)
+        delete_minute_entry.insert(0, config.get("delete_minute", "0"))
         display_status(f"[OK] Profil '{profile_name}' chargé", "green")
 
 
@@ -169,6 +178,104 @@ def open_github_link():
 
 def open_logs_versions():
     webbrowser.open("https://valuthringer.github.io")
+
+
+########################################
+
+
+# Utility functions for sizes
+def get_directory_size(path):
+    """Calcule la taille totale d'un répertoire en bytes"""
+    total_size = 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                if os.path.exists(filepath):
+                    total_size += os.path.getsize(filepath)
+    except Exception as e:
+        print(f"Erreur lors du calcul de taille: {e}")
+    return total_size
+
+
+def get_selected_dirs_total_size(root_dirs_str):
+    """Calcule la taille totale des répertoires sélectionnés"""
+    total_size = 0
+    for root_dir in root_dirs_str.split(";"):
+        root_dir = root_dir.strip()
+        if os.path.exists(root_dir):
+            total_size += get_directory_size(root_dir)
+    return total_size
+
+
+def get_disk_free_space(path):
+    """Retourne l'espace libre disponible sur le disque contenant le chemin"""
+    try:
+        if os.path.exists(path):
+            stat = os.statvfs(path) if hasattr(os, "statvfs") else None
+            if stat:
+                return stat.f_bavail * stat.f_frsize
+            else:
+                # Windows fallback
+                import ctypes
+
+                free_bytes = ctypes.c_ulonglong(0)
+                ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                    ctypes.c_wchar_p(path), None, None, ctypes.pointer(free_bytes)
+                )
+                return free_bytes.value
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'espace disque: {e}")
+    return 0
+
+
+def format_size(size_bytes):
+    """Formate une taille en bytes vers une unité lisible"""
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size_bytes < 1024:
+            return f"{size_bytes:.2f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.2f} PB"
+
+
+def update_backup_info_display():
+    """Met à jour l'affichage des informations de sauvegarde"""
+    root_dirs = root_dirs_text.get_paths()
+    dest_dir = dest_dir_entry.get()
+
+    if root_dirs:
+        total_size = get_selected_dirs_total_size(root_dirs)
+        backup_size_label.config(text=f"Taille totale: {format_size(total_size)}")
+    else:
+        backup_size_label.config(text="Taille totale: -")
+
+    if dest_dir and os.path.exists(dest_dir):
+        free_space = get_disk_free_space(dest_dir)
+        dest_space_label.config(text=f"Espace disponible: {format_size(free_space)}")
+    else:
+        dest_space_label.config(text="Espace disponible: -")
+
+
+def update_next_backup_display():
+    """Met à jour l'affichage de la prochaine sauvegarde programmée"""
+    try:
+        frequency_days = int(frequency_entry.get())
+        hour = int(hour_entry.get())
+        minute = int(minute_entry.get())
+    except (ValueError, AttributeError):
+        next_backup_label.config(text="Prochaine backup: -")
+        return
+
+    if start_backup_button.cget("state") == "normal":
+        next_backup_label.config(text="Prochaine backup: Pas de backup programmée")
+    else:
+        now = datetime.now()
+        next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if next_time <= now:
+            next_time += timedelta(days=frequency_days)
+        next_backup_label.config(
+            text=f"Prochaine backup: {next_time.strftime('%d-%m-%Y à %H:%M:%S')}"
+        )
 
 
 ########################################
@@ -290,10 +397,14 @@ def start_backup_schedule():
     dest_dir = dest_dir_entry.get()
     try:
         frequency_days = int(frequency_entry.get())
-        backup_time = f"{int(hour_entry.get()):02}:00"
+        hour = int(hour_entry.get())
+        minute = int(minute_entry.get())
+        backup_time = f"{hour:02}:{minute:02}"
     except ValueError:
-        display_status("[ERROR] Entrée invalide pour la fréquence ou l'heure", "red")
-        print("Invalid input for frequency or time")
+        display_status(
+            "[ERROR] Entrée invalide pour la fréquence, l'heure ou les minutes", "red"
+        )
+        print("Invalid input for frequency, hour or minute")
         return
 
     if root_dirs and dest_dir:
@@ -314,9 +425,10 @@ def start_backup_schedule():
         start_backup_button.config(state="disabled")
         stop_backup_button.config(state="normal")
         display_status(
-            f"[OK] Backup automatique démarrée tous les {frequency_days} jours à {backup_time}",
+            f"[OK] Backup automatique démarrée tous les {frequency_days} jour(s) à {backup_time}",
             "green",
         )
+        update_next_backup_display()
         print(
             f"Automatic backup scheduled every {frequency_days} days at {backup_time}"
         )
@@ -328,6 +440,7 @@ def start_backup_schedule():
 
 
 stop_event = threading.Event()
+delete_stop_event = threading.Event()
 
 
 # Arrêt sauvegarde automatique
@@ -337,6 +450,7 @@ def stop_backup_schedule():
     start_backup_button.config(state="normal")
     stop_backup_button.config(state="disabled")
     display_status("[OK] Backup automatique arrêtée", "blue")
+    update_next_backup_display()
     print("Automatic backup stopped")
 
 
@@ -351,19 +465,25 @@ def add_root_folder():
 
 # Démarrer la vérification automatique pour supprimer les fichiers .zip
 def start_auto_delete_schedule():
-    """Démarre la suppression automatique quotidienne à 3h du matin"""
+    """Démarre la suppression automatique quotidienne à l'heure/minute configurée"""
     directory = directory_entry.get()
     try:
         days = int(days_entry.get())
+        delete_hour = int(delete_hour_entry.get())
+        delete_minute = int(delete_minute_entry.get())
+        delete_time = f"{delete_hour:02}:{delete_minute:02}"
     except ValueError:
-        display_status("[ERROR] Nombre de jours invalide", "red")
-        print("Invalid number of days")
+        display_status("[ERROR] Paramètres invalides pour la suppression", "red")
+        print("Invalid parameters for delete schedule")
         return
     if directory and os.path.exists(directory):
-        schedule.every().day.at("03:00").do(check_and_delete_zip_files, directory, days)
+        delete_stop_event.clear()
+        schedule.every().day.at(delete_time).do(
+            check_and_delete_zip_files, directory, days
+        )
 
         def run_schedule():
-            while True:
+            while not delete_stop_event.is_set():
                 schedule.run_pending()
                 time.sleep(1)
 
@@ -373,9 +493,10 @@ def start_auto_delete_schedule():
         start_delete_button.config(state="disabled")
         stop_delete_button.config(state="normal")
         display_status(
-            "[OK] Suppression automatique démarrée (03:00 quotidienne)", "green"
+            f"[OK] Suppression automatique démarrée quotidiennement à {delete_time}",
+            "green",
         )
-        print("Automatic delete started")
+        print(f"Automatic delete started daily at {delete_time}")
     else:
         display_status("[ERROR] Répertoire invalide", "red")
 
@@ -383,6 +504,7 @@ def start_auto_delete_schedule():
 # Arrêter l'auto suppression
 def stop_auto_delete_schedule():
     """Arrête la suppression automatique"""
+    delete_stop_event.set()
     start_delete_button.config(state="normal")
     stop_delete_button.config(state="disabled")
     display_status("[OK] Suppression automatique arrêtée", "blue")
@@ -944,14 +1066,18 @@ frequency_entry.insert(0, "1")
 frequency_entry.pack(side="left", padx=5)
 ttk.Label(freq_row, text="jour(s)", font=("Segoe UI", 10)).pack(side="left", padx=5)
 
-hour_row = ttk.Frame(freq_frame)
-hour_row.pack(fill="x", pady=4)
+time_row = ttk.Frame(freq_frame)
+time_row.pack(fill="x", pady=4)
 
-ttk.Label(hour_row, text="À", font=("Segoe UI", 10)).pack(side="left", padx=5)
-hour_entry = ttk.Entry(hour_row, width=5)
+ttk.Label(time_row, text="À", font=("Segoe UI", 10)).pack(side="left", padx=5)
+hour_entry = ttk.Entry(time_row, width=3)
 hour_entry.insert(0, "2")
-hour_entry.pack(side="left", padx=5)
-ttk.Label(hour_row, text="heures", font=("Segoe UI", 10)).pack(side="left", padx=5)
+hour_entry.pack(side="left", padx=2)
+ttk.Label(time_row, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
+minute_entry = ttk.Entry(time_row, width=3)
+minute_entry.insert(0, "0")
+minute_entry.pack(side="left", padx=2)
+ttk.Label(time_row, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
 # Barre de progression
 progress_var = tk.IntVar()
@@ -962,7 +1088,29 @@ progress_bar = ttk.Progressbar(
     mode="determinate",
     variable=progress_var,
 )
-progress_bar.grid(row=8, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+progress_bar.grid(row=7, column=0, columnspan=2, sticky="ew", pady=8, padx=0)
+
+# Info labels frame
+info_frame = ttk.Frame(backup_frame)
+info_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 5), padx=5)
+
+backup_size_label = ttk.Label(
+    info_frame, text="Taille totale: -", foreground="#2E7D32", font=("Segoe UI", 9)
+)
+backup_size_label.pack(anchor="w", pady=2)
+
+dest_space_label = ttk.Label(
+    info_frame,
+    text="Espace disponible: -",
+    foreground="#2E7D32",
+    font=("Segoe UI", 9),
+)
+dest_space_label.pack(anchor="w", pady=2)
+
+next_backup_label = ttk.Label(
+    info_frame, text="Prochaine backup: -", foreground="#2E7D32", font=("Segoe UI", 9)
+)
+next_backup_label.pack(anchor="w", pady=2)
 
 # Statut
 status_label = ttk.Label(
@@ -1052,16 +1200,33 @@ days_entry.pack(side="left", padx=5)
 
 ttk.Label(days_frame, text="jour(s)", font=("Segoe UI", 10)).pack(side="left", padx=5)
 
-ttk.Label(
-    params_frame,
-    text="Schedule: Daily at 03:00",
-    foreground="#999",
-    font=("Segoe UI", 9),
-).pack(anchor="w", pady=(8, 0))
+# Planning de suppression
+ttk.Label(params_frame, text="Planification quotidienne:", font=("Segoe UI", 10)).pack(
+    anchor="w", pady=(8, 5)
+)
+
+schedule_frame = ttk.Frame(params_frame)
+schedule_frame.pack(fill="x", pady=4)
+
+ttk.Label(schedule_frame, text="À", font=("Segoe UI", 10)).pack(side="left", padx=5)
+delete_hour_entry = ttk.Entry(schedule_frame, width=3)
+delete_hour_entry.insert(0, "3")
+delete_hour_entry.pack(side="left", padx=2)
+ttk.Label(schedule_frame, text="h", font=("Segoe UI", 10)).pack(side="left", padx=2)
+delete_minute_entry = ttk.Entry(schedule_frame, width=3)
+delete_minute_entry.insert(0, "0")
+delete_minute_entry.pack(side="left", padx=2)
+ttk.Label(schedule_frame, text="min", font=("Segoe UI", 10)).pack(side="left", padx=2)
 
 # Espace élastique
 espace = ttk.Frame(delete_frame)
 espace.grid(row=4, column=0, columnspan=2, sticky="ew", pady=20)
+
+# Info labels
+delete_backup_folder_label = ttk.Label(
+    espace, text="Dossier de backup: -", foreground="#2E7D32", font=("Segoe UI", 9)
+)
+delete_backup_folder_label.pack(anchor="w", pady=5)
 
 # Boutons de contrôle
 delete_button_frame = ttk.Frame(delete_frame)
@@ -1093,6 +1258,16 @@ manual_delete_button = ttk.Button(
     style="Accent.TButton",
 )
 manual_delete_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+
+# Event bindings to update info displays
+root_dirs_text.input_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
+dest_dir_entry.bind("<KeyRelease>", lambda e: update_backup_info_display())
+frequency_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+hour_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+minute_entry.bind("<KeyRelease>", lambda e: update_next_backup_display())
+
+# Initial display update
+root.after(500, update_backup_info_display)
 
 # Démarrage interface
 root.mainloop()

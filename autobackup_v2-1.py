@@ -386,6 +386,7 @@ def check_and_delete_zip_files(directory, days):
 # Créer une sauvegarde auto à partir des dossiers sources
 def create_backup(root_dirs, dest_dir):
     """Crée un fichier ZIP de sauvegarde des dossiers spécifiés"""
+    root.after(0, lambda: set_ui_locked(True))
     try:
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
@@ -442,6 +443,8 @@ def create_backup(root_dirs, dest_dir):
         progress_percent_label.config(text="0%")
         display_status(f"[ERROR] Backup error: {str(e)}", "red")
         print(f"Error during backup: {e}")
+    finally:
+        root.after(0, lambda: set_ui_locked(False))
 
 
 # Afficher le status de la sauvegarde
@@ -519,6 +522,7 @@ def start_backup_schedule():
 
 stop_event = threading.Event()
 delete_stop_event = threading.Event()
+_saved_button_states = {}
 
 
 # Arrêt sauvegarde automatique
@@ -1060,6 +1064,16 @@ class TagsWidget:
         self.paths = [p.strip() for p in paths_str.split(";") if p.strip()]
         self.update_display()
 
+    def set_disabled(self, disabled):
+        """Active ou désactive tous les contrôles du widget"""
+        state = "disabled" if disabled else "normal"
+        self.input_entry.config(state=state)
+        self.ok_button.config(state=state)
+        for tag_frame in self.tags_frame.winfo_children():
+            for child in tag_frame.winfo_children():
+                if isinstance(child, tk.Button):
+                    child.config(state=state)
+
 
 # Frame principal avec scrollbar
 main_frame = ttk.Frame(root)
@@ -1488,6 +1502,34 @@ delete_backup_folder_label = ttk.Label(
     espace, text="Backup folder: -", foreground="#2E7D32", font=("Segoe UI", 9)
 )
 delete_backup_folder_label.pack(anchor="w", pady=5)
+
+
+def set_ui_locked(locked):
+    """Grise la section Backup + Profils pendant qu'une sauvegarde est en cours"""
+    global _saved_button_states
+
+    widgets_to_toggle = [
+        add_root_button, dest_dir_entry, browse_dest_button,
+        frequency_entry, hour_entry, minute_entry,
+        manual_backup_button, refresh_info_button,
+        profile_listbox, new_profile_button, load_profile_button,
+        save_profile_button, save_profile_as_button, delete_profile_button,
+    ]
+
+    if locked:
+        _saved_button_states["start"] = start_backup_button.cget("state")
+        _saved_button_states["stop"] = stop_backup_button.cget("state")
+        start_backup_button.config(state="disabled")
+        stop_backup_button.config(state="disabled")
+        for w in widgets_to_toggle:
+            w.config(state="disabled")
+        root_dirs_text.set_disabled(True)
+    else:
+        start_backup_button.config(state=_saved_button_states.get("start", "normal"))
+        stop_backup_button.config(state=_saved_button_states.get("stop", "disabled"))
+        for w in widgets_to_toggle:
+            w.config(state="normal")
+        root_dirs_text.set_disabled(False)
 
 
 # Routage molette → bon canvas selon la zone survolée

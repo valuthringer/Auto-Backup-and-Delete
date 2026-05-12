@@ -9,7 +9,25 @@ import zipfile
 import webbrowser
 import sys
 import json
+import ctypes
 from pathlib import Path
+
+# Windows sleep prevention during backups
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+_ES_AWAYMODE_REQUIRED = 0x00000040
+
+
+def _prevent_sleep():
+    if sys.platform == "win32":
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_AWAYMODE_REQUIRED
+        )
+
+
+def _allow_sleep():
+    if sys.platform == "win32":
+        ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
 
 
 # Configuration profiles management
@@ -470,6 +488,7 @@ def update_next_backup_display():
 # Supprimer les fichiers zip du répertoire de sauvegarde
 def check_and_delete_zip_files(directories_str, days):
     """Supprime les fichiers .zip plus anciens que le nombre de jours spécifié dans tous les répertoires"""
+    _prevent_sleep()
     root.after(0, lambda: set_delete_ui_locked(True))
     directories = [d.strip() for d in directories_str.split(";") if d.strip()]
     if not directories:
@@ -528,16 +547,18 @@ def check_and_delete_zip_files(directories_str, days):
 
         def _reset_delete():
             delete_progress_var.set(0)
-            delete_progress_percent_label.config(text="0%")
+            delete_progress_percent_label.config(text="--")
             set_delete_ui_locked(False)
             update_delete_info_display()
 
+        _allow_sleep()
         root.after(0, _reset_delete)
 
 
 # Créer une sauvegarde auto à partir des dossiers sources
 def create_backup(root_dirs, dest_dirs_str):
     """Crée un fichier ZIP de sauvegarde des dossiers spécifiés dans chaque destination"""
+    _prevent_sleep()
     root.after(0, lambda: set_ui_locked(True))
     dest_dirs = [d.strip() for d in dest_dirs_str.split(";") if d.strip()]
     if not dest_dirs:
@@ -598,15 +619,16 @@ def create_backup(root_dirs, dest_dirs_str):
                                 progress_bar.update()
 
         progress_var.set(0)
-        progress_percent_label.config(text="0%")
+        progress_percent_label.config(text="--")
         display_status(f"[OK] Backup complete: {backup_name}", "green")
         print(f"Backup created: {backup_name}")
     except Exception as e:
         progress_var.set(0)
-        progress_percent_label.config(text="0%")
+        progress_percent_label.config(text="--")
         display_status(f"[ERROR] Backup error: {str(e)}", "red")
         print(f"Error during backup: {e}")
     finally:
+        _allow_sleep()
         root.after(0, lambda: set_ui_locked(False))
 
 
@@ -756,11 +778,11 @@ def force_purge_all_backups():
                         )
 
             delete_progress_var.set(0)
-            delete_progress_percent_label.config(text="0%")
+            delete_progress_percent_label.config(text="--")
             display_status(f"[OK] Purged {deleted_count} item(s)", "green")
         except Exception as e:
             delete_progress_var.set(0)
-            delete_progress_percent_label.config(text="0%")
+            delete_progress_percent_label.config(text="--")
             display_status(f"[ERROR] Purge error: {str(e)}", "red")
             print(f"Error during purge: {e}")
         finally:
@@ -1091,7 +1113,7 @@ def open_a_propos():
 
     ttk.Label(
         content_frame,
-        text="Version 3.1 - Modernized with Forest-ttk",
+        text="Version 3.2 - Modernized with Forest-ttk",
         foreground="#666",
     ).pack(anchor="w", pady=5)
     ttk.Label(content_frame, text="Last updated: May 12, 2026", foreground="#999").pack(
@@ -1662,7 +1684,7 @@ progress_bar = ttk.Progressbar(
 progress_bar.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
 progress_percent_label = ttk.Label(
-    progress_frame, text="0%", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
+    progress_frame, text="--", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
 )
 progress_percent_label.grid(row=0, column=1, sticky="e")
 
@@ -1851,7 +1873,7 @@ delete_progress_bar = ttk.Progressbar(
 delete_progress_bar.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
 delete_progress_percent_label = ttk.Label(
-    delete_progress_frame, text="0%", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
+    delete_progress_frame, text="--", font=("Segoe UI", 10, "bold"), width=5, anchor="e"
 )
 delete_progress_percent_label.grid(row=0, column=1, sticky="e")
 
